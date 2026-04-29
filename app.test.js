@@ -14,6 +14,7 @@ const {
   runSimulation,
   simulateCommanderCastAccess,
   simulateColorAccess,
+  simulateCurveAccess,
   summarizeDeck,
   summarizeRoleCounts,
 } = require("./app.js");
@@ -194,9 +195,24 @@ const monoBlackColorRun = simulateColorAccess(
   ["B"],
 );
 assert.deepEqual(monoBlackColorRun.deckColors, ["B"]);
+assert.equal(monoBlackColorRun.colorsByTurn.length, 8);
+assert.equal(monoBlackColorRun.fullCommanderColorAccessByTurn.length, 8);
+assert.equal(monoBlackColorRun.turns[0].fullCommanderIdentityAccess, 5);
+assert.equal(monoBlackColorRun.turns[0].allColors, 5);
 
 const noCommanderColorRun = simulateColorAccess([forest], 5, []);
 assert.deepEqual(noCommanderColorRun.deckColors, []);
+
+const curveAccessRun = simulateCurveAccess(
+  [
+    mockCard("Mountain", "Basic Land - Mountain", [], { produced_mana: ["R"] }),
+    mockSpell("Lightning Bolt", "{R}"),
+  ],
+  5,
+  ["R"],
+);
+assert.equal(curveAccessRun.castabilityByTurn.length, 8);
+assert.equal(curveAccessRun.turns[0].onCurveSpellByTurnCost, curveAccessRun.turns[0].curvePlay);
 
 function cardWithCount(card, count, section = "main") {
   return { ...card, count, section };
@@ -349,5 +365,7 @@ assert.equal(allForestTimelineRun.manaDevelopment.turns[1].atLeastThresholdCount
 assert.equal(allForestTimelineRun.manaDevelopment.turns[7].atLeastThresholdCount, 5);
 assert.equal(allForestTimelineRun.manaByTurn[1].atLeastThresholdCount, 5);
 assert.equal(allForestTimelineRun.manaByTurn[7].atLeastThresholdCount, 5);
+assert.equal(allForestTimelineRun.simulationFeatures.manaByTurn.length, 8);
+assert.equal(allForestTimelineRun.simulationFeatures.colorsByTurn.length, 0);
 
 console.log("otag-role-tests-ok");

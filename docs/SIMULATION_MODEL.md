@@ -3,6 +3,17 @@
 ## Purpose
 Describe the current turn-by-turn simulation model and how game-state estimates are derived.
 
+## Canonical Feature Shape
+The simulation layer now exposes a canonical `SimulationFeatures`-style shape for reuse by V1 and future scoring/benchmarking work:
+
+- `manaByTurn`
+- `colorsByTurn`
+- `fullCommanderColorAccessByTurn`
+- `castabilityByTurn`
+- `commanderTiming`
+
+Legacy fields are still returned for compatibility while UI migration remains incremental.
+
 ## Turn-by-Turn Simulation Flow
 - Define iteration count from the simulation input.
 - Build a library-only pool (commander cards excluded from opening-hand draws).
@@ -54,15 +65,37 @@ Describe the current turn-by-turn simulation model and how game-state estimates 
     - 8+ mana on turn 8
 - Reusable result structure includes:
   - `manaByTurn` (normalized timeline for turn 1-8)
+  - `simulationFeatures.manaByTurn` (canonical feature path)
   - `manaDevelopment.turns` (legacy-compatible timeline)
 
 ## Color Access Aggregation
 - Color access is tracked turn-by-turn for turns 1-8.
 - Reusable result structure includes:
   - `colorsByTurn` (per-turn per-color hit counts)
+  - `simulationFeatures.colorsByTurn` (canonical feature path)
   - `commanderColorAccessByTurn` (alias to per-turn commander color hits)
   - `fullCommanderColorAccessByTurn` (per-turn full identity access hit counts)
-- Existing UI still uses the same underlying `turns` structure, with reusable aliases added for V1 foundation use.
+  - `simulationFeatures.fullCommanderColorAccessByTurn` (canonical feature path)
+- Naming cleanup in progress:
+  - canonical full-identity metric name: `fullCommanderIdentityAccess`
+  - legacy compatibility alias still present: `allColors`
+
+## Castability Aggregation
+- Castability is tracked turn-by-turn for turns 1-8.
+- Reusable result structure includes:
+  - `castabilityByTurn` (canonical feature path with `anyCastable` and `onCurveSpellByTurnCost`)
+  - `turns` (legacy-compatible path with `curvePlay` alias)
+- Naming cleanup in progress:
+  - canonical on-curve metric name: `onCurveSpellByTurnCost`
+  - legacy compatibility alias still present: `curvePlay`
+
+## Commander Timing Data
+- Commander castability output is carried as `SimulationFeatures.commanderTiming` when a commander simulation is run.
+- If commander castability is not run, `commanderTiming` is `null`.
+
+## Reporting Heuristics vs Core Features
+- Heuristic hand labels (for example 2-4 lands, low-land, high-land) remain available as reporting metrics.
+- They are intentionally separate from the canonical feature shape so future functional-hand scoring can use neutral inputs.
 
 ## Known Limitations
 - This model is heuristic and intentionally not a full rules engine.

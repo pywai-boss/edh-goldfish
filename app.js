@@ -980,6 +980,13 @@ function runSimulation(library, options = {}) {
     handSize,
     distribution,
     manaByTurn,
+    simulationFeatures: {
+      manaByTurn,
+      colorsByTurn: [],
+      fullCommanderColorAccessByTurn: [],
+      castabilityByTurn: [],
+      commanderTiming: null,
+    },
     manaDevelopment: {
       turns: manaByTurn.map((entry) => ({
         turn: entry.turn,
@@ -1085,6 +1092,7 @@ function simulateColorAccess(deck, iterations = 10000, commanderColorIdentity = 
   const turnStats = Array.from({ length: 8 }, (_, index) => ({
     turn: index + 1,
     colors: Object.fromEntries(MANA_COLORS.map((color) => [color, 0])),
+    fullCommanderIdentityAccess: 0,
     allColors: 0,
   }));
 
@@ -1101,6 +1109,7 @@ function simulateColorAccess(deck, iterations = 10000, commanderColorIdentity = 
       });
 
       if (deckColors.every((color) => availableMana.colorCounts[color] > 0)) {
+        turnStats[turn - 1].fullCommanderIdentityAccess += 1;
         turnStats[turn - 1].allColors += 1;
       }
     }
@@ -1112,7 +1121,7 @@ function simulateColorAccess(deck, iterations = 10000, commanderColorIdentity = 
   }));
   const fullCommanderColorAccessByTurn = turnStats.map((turnData) => ({
     turn: turnData.turn,
-    hitCount: turnData.allColors,
+    hitCount: turnData.fullCommanderIdentityAccess,
   }));
 
   return {
@@ -1121,6 +1130,13 @@ function simulateColorAccess(deck, iterations = 10000, commanderColorIdentity = 
     colorsByTurn,
     commanderColorAccessByTurn: colorsByTurn,
     fullCommanderColorAccessByTurn,
+    simulationFeatures: {
+      manaByTurn: [],
+      colorsByTurn,
+      fullCommanderColorAccessByTurn,
+      castabilityByTurn: [],
+      commanderTiming: null,
+    },
     turns: turnStats,
   };
 }
@@ -1132,6 +1148,7 @@ function simulateCurveAccess(deck, iterations = 10000, commanderColorIdentity = 
   const turnStats = Array.from({ length: 8 }, (_, index) => ({
     turn: index + 1,
     anyCastable: 0,
+    onCurveSpellByTurnCost: 0,
     curvePlay: 0,
   }));
 
@@ -1148,14 +1165,29 @@ function simulateCurveAccess(deck, iterations = 10000, commanderColorIdentity = 
       }
 
       if (castableSpells.some((card) => getManaCostRequirements(card).total === turn)) {
+        turnStats[turn - 1].onCurveSpellByTurnCost += 1;
         turnStats[turn - 1].curvePlay += 1;
       }
     }
   }
 
+  const castabilityByTurn = turnStats.map((turnData) => ({
+    turn: turnData.turn,
+    anyCastable: turnData.anyCastable,
+    onCurveSpellByTurnCost: turnData.onCurveSpellByTurnCost,
+  }));
+
   return {
     iterations,
     deckColors,
+    castabilityByTurn,
+    simulationFeatures: {
+      manaByTurn: [],
+      colorsByTurn: [],
+      fullCommanderColorAccessByTurn: [],
+      castabilityByTurn,
+      commanderTiming: null,
+    },
     turns: turnStats,
   };
 }
@@ -1508,6 +1540,7 @@ const appState = {
   parsed: null,
   libraryCards: [],
   library: [],
+  simulationFeatures: null,
   isDeckPanelCollapsed: false,
   isParsing: false,
   reviewOpen: false,
@@ -1724,14 +1757,55 @@ function renderMiniMetric(container, label, value) {
   );
 }
 
-function getTurnPercent(result, turn, field) {
-  if (!result || !result.iterations) return "0.0%";
-  return percent(result.turns[turn - 1]?.[field] || 0, result.iterations);
-}
+function createSimulationFeatures({
+  simulationResult = null,
+  colorResult = null,
+  curveResult = null,
+  commanderCastResult = null,
+} = {}) {
+  const manaByTurn =
+    simulationResult?.simulationFeatures?.manaByTurn ||
+    simulationResult?.manaByTurn ||
+    simulationResult?.manaDevelopment?.turns?.map((turnData) => ({
+      turn: turnData.turn,
+      averageTotalMana: turnData.averageAvailableMana,
+      threshold: turnData.threshold,
+      atLeastThresholdCount: turnData.atLeastThresholdCount,
+    })) ||
+    [];
+  const colorsByTurn =
+    colorResult?.simulationFeatures?.colorsByTurn ||
+    colorResult?.colorsByTurn ||
+    colorResult?.turns?.map((turnData) => ({
+      turn: turnData.turn,
+      colorHits: { ...turnData.colors },
+    })) ||
+    [];
+  const fullCommanderColorAccessByTurn =
+    colorResult?.simulationFeatures?.fullCommanderColorAccessByTurn ||
+    colorResult?.fullCommanderColorAccessByTurn ||
+    colorResult?.turns?.map((turnData) => ({
+      turn: turnData.turn,
+      hitCount: turnData.fullCommanderIdentityAccess ?? turnData.allColors ?? 0,
+    })) ||
+    [];
+  const castabilityByTurn =
+    curveResult?.simulationFeatures?.castabilityByTurn ||
+    curveResult?.castabilityByTurn ||
+    curveResult?.turns?.map((turnData) => ({
+      turn: turnData.turn,
+      anyCastable: turnData.anyCastable || 0,
+      onCurveSpellByTurnCost: turnData.onCurveSpellByTurnCost ?? turnData.curvePlay ?? 0,
+    })) ||
+    [];
 
-function getTurnColorPercent(result, turn, color) {
-  if (!result || !result.iterations) return "0.0%";
-  return percent(result.turns[turn - 1]?.colors[color] || 0, result.iterations);
+  return {
+    manaByTurn,
+    colorsByTurn,
+    fullCommanderColorAccessByTurn,
+    castabilityByTurn,
+    commanderTiming: commanderCastResult || null,
+  };
 }
 
 function formatAverageTurn(value) {
@@ -1759,7 +1833,13 @@ function renderCommanderCastMetrics(container, commanderCastResult) {
   }
 }
 
-function renderColorCurveAnalysis(colorResult, curveResult, commanderCastResult = null, simulationResult = null) {
+function renderColorCurveAnalysis(
+  colorResult,
+  curveResult,
+  commanderCastResult = null,
+  simulationResult = null,
+  simulationFeatures = null,
+) {
   const summary = document.querySelector("#color-curve-summary");
   const cards = document.querySelector("#color-curve-cards");
   const tableWrap = document.querySelector("#color-curve-table");
@@ -1779,18 +1859,54 @@ function renderColorCurveAnalysis(colorResult, curveResult, commanderCastResult 
   }
 
   const relevantColors = getRelevantColors(appState.commanderColorIdentity);
+  const featureSet =
+    simulationFeatures ||
+    createSimulationFeatures({
+      simulationResult,
+      colorResult,
+      curveResult,
+      commanderCastResult,
+    });
   summary.textContent = `${colorResult.iterations.toLocaleString()} hands, X costs use fixed heuristic`;
   if (relevantColors.length > 0) {
-    renderMiniMetric(cards, "Commander Colors T2", getTurnPercent(colorResult, 2, "allColors"));
-    renderMiniMetric(cards, "Commander Colors T3", getTurnPercent(colorResult, 3, "allColors"));
-    renderMiniMetric(cards, "Commander Colors T4", getTurnPercent(colorResult, 4, "allColors"));
+    renderMiniMetric(
+      cards,
+      "Commander Colors T2",
+      percent(featureSet.fullCommanderColorAccessByTurn[1]?.hitCount || 0, colorResult.iterations),
+    );
+    renderMiniMetric(
+      cards,
+      "Commander Colors T3",
+      percent(featureSet.fullCommanderColorAccessByTurn[2]?.hitCount || 0, colorResult.iterations),
+    );
+    renderMiniMetric(
+      cards,
+      "Commander Colors T4",
+      percent(featureSet.fullCommanderColorAccessByTurn[3]?.hitCount || 0, colorResult.iterations),
+    );
   } else {
     renderMiniMetric(cards, "Color Identity", "Colorless");
   }
-  renderMiniMetric(cards, "Turn 1 Play", getTurnPercent(curveResult, 1, "curvePlay"));
-  renderMiniMetric(cards, "Turn 2 Play", getTurnPercent(curveResult, 2, "curvePlay"));
-  renderMiniMetric(cards, "Turn 3 Play", getTurnPercent(curveResult, 3, "curvePlay"));
-  renderMiniMetric(cards, "Turn 4 Play", getTurnPercent(curveResult, 4, "curvePlay"));
+  renderMiniMetric(
+    cards,
+    "Turn 1 Play",
+    percent(featureSet.castabilityByTurn[0]?.onCurveSpellByTurnCost || 0, curveResult.iterations),
+  );
+  renderMiniMetric(
+    cards,
+    "Turn 2 Play",
+    percent(featureSet.castabilityByTurn[1]?.onCurveSpellByTurnCost || 0, curveResult.iterations),
+  );
+  renderMiniMetric(
+    cards,
+    "Turn 3 Play",
+    percent(featureSet.castabilityByTurn[2]?.onCurveSpellByTurnCost || 0, curveResult.iterations),
+  );
+  renderMiniMetric(
+    cards,
+    "Turn 4 Play",
+    percent(featureSet.castabilityByTurn[3]?.onCurveSpellByTurnCost || 0, curveResult.iterations),
+  );
   renderCommanderCastMetrics(cards, commanderCastResult);
 
   const table = createElement("table", "curve-table");
@@ -1817,32 +1933,49 @@ function renderColorCurveAnalysis(colorResult, curveResult, commanderCastResult 
     const row = createElement("tr");
     row.append(createElement("td", "", String(turn)));
     relevantColors.forEach((color) => {
-      row.append(createElement("td", "", getTurnColorPercent(colorResult, turn, color)));
+      row.append(
+        createElement(
+          "td",
+          "",
+          percent(featureSet.colorsByTurn[turn - 1]?.colorHits?.[color] || 0, colorResult.iterations),
+        ),
+      );
     });
     row.append(
       createElement(
         "td",
         "",
-        relevantColors.length > 0 ? getTurnPercent(colorResult, turn, "allColors") : "Not needed",
+        relevantColors.length > 0
+          ? percent(featureSet.fullCommanderColorAccessByTurn[turn - 1]?.hitCount || 0, colorResult.iterations)
+          : "Not needed",
       ),
     );
     row.append(
       createElement(
         "td",
         "",
-        simulationResult?.manaByTurn?.[turn - 1]?.averageTotalMana?.toFixed(2) ||
+        featureSet?.manaByTurn?.[turn - 1]?.averageTotalMana?.toFixed(2) ||
+          simulationResult?.manaByTurn?.[turn - 1]?.averageTotalMana?.toFixed(2) ||
           simulationResult?.manaDevelopment?.turns?.[turn - 1]?.averageAvailableMana?.toFixed(2) ||
           "--",
       ),
     );
-    row.append(createElement("td", "", getTurnPercent(curveResult, turn, "anyCastable")));
+    row.append(
+      createElement(
+        "td",
+        "",
+        percent(featureSet.castabilityByTurn[turn - 1]?.anyCastable || 0, curveResult.iterations),
+      ),
+    );
     body.append(row);
   }
   table.append(body);
   tableWrap.append(table);
 
-  if (simulationResult?.manaByTurn || simulationResult?.manaDevelopment?.turns) {
-    const timeline = simulationResult.manaByTurn || simulationResult.manaDevelopment.turns;
+  if (featureSet?.manaByTurn?.length > 0 || simulationResult?.manaByTurn || simulationResult?.manaDevelopment?.turns) {
+    const timeline = featureSet?.manaByTurn?.length
+      ? featureSet.manaByTurn
+      : simulationResult.manaByTurn || simulationResult.manaDevelopment.turns;
     const thresholdSummary = createElement(
       "div",
       "muted-value",
@@ -1908,6 +2041,7 @@ function renderUnparsedDeck(message = "Deck loaded. Parse and tag it before simu
   appState.parsed = null;
   appState.libraryCards = [];
   appState.library = [];
+  appState.simulationFeatures = null;
   appState.isDeckPanelCollapsed = false;
   appState.reviewOpen = false;
   appState.reviewShowDetails = false;
@@ -2038,6 +2172,7 @@ function clearDeck() {
   appState.parsed = null;
   appState.libraryCards = [];
   appState.library = [];
+  appState.simulationFeatures = null;
   appState.isDeckPanelCollapsed = false;
   appState.reviewOpen = false;
   appState.reviewShowDetails = false;
@@ -2062,6 +2197,7 @@ async function parseLoadedDeck() {
     appState.parsed = null;
     appState.libraryCards = [];
     appState.library = [];
+    appState.simulationFeatures = null;
     appState.isDeckPanelCollapsed = false;
     appState.reviewOpen = false;
     appState.reviewShowDetails = false;
@@ -2103,6 +2239,7 @@ async function parseLoadedDeck() {
   }
 
   appState.parsed = parsed;
+  appState.simulationFeatures = null;
   appState.reviewOpen = false;
   appState.reviewShowDetails = false;
   detectAndApplyCommanders(parsed);
@@ -2159,11 +2296,18 @@ function simulateCurrentDeck() {
           appState.commanderColorIdentity,
         )
       : null;
+  const simulationFeatures = createSimulationFeatures({
+    simulationResult: result,
+    colorResult,
+    curveResult,
+    commanderCastResult,
+  });
+  appState.simulationFeatures = simulationFeatures;
   renderDeckMetrics(parsed, result);
   renderDeckTagReview(parsed);
   renderLandChart(result);
   renderManaStats(result);
-  renderColorCurveAnalysis(colorResult, curveResult, commanderCastResult, result);
+  renderColorCurveAnalysis(colorResult, curveResult, commanderCastResult, result, simulationFeatures);
   renderSampleHands(result);
   renderNotes(parsed, "Simulation complete");
   renderLoadState();
@@ -2220,6 +2364,7 @@ function handleCommanderSelectChange(event) {
     appState.selectedCommanders = [];
     appState.selectedCommanderKeys = [];
     appState.commanderColorIdentity = [];
+    appState.simulationFeatures = null;
     refreshLibraryForCommanders();
     populateCommanderSelect(appState.parsed);
     renderDeckMetrics(appState.parsed, null);
@@ -2232,6 +2377,7 @@ function handleCommanderSelectChange(event) {
   }
 
   applyCommanderSelection(commanders, "manual");
+  appState.simulationFeatures = null;
   populateCommanderSelect(appState.parsed);
   renderDeckMetrics(appState.parsed, null);
   renderLandChart(null);
@@ -2293,6 +2439,7 @@ if (typeof module !== "undefined") {
     buildLibraryCards,
     canPayManaCost,
     classifyCard,
+    createSimulationFeatures,
     detectCommandersFromSections,
     enrichParsedDeck,
     getCommanderColorIdentity,

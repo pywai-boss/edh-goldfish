@@ -61,14 +61,27 @@ Define all reported metrics and how each one is calculated.
 - Heuristic assumptions are used; this is not a full game rules engine.
 
 ## Reusable Data Outputs
-- `runSimulation(...)` exposes:
-  - `manaByTurn`
-  - `manaDevelopment.turns` (compatibility path)
-- `simulateColorAccess(...)` exposes:
-  - `colorsByTurn`
-  - `commanderColorAccessByTurn`
-  - `fullCommanderColorAccessByTurn`
-  - `turns` (compatibility path)
+Canonical `SimulationFeatures` shape:
+- `manaByTurn`
+- `colorsByTurn`
+- `fullCommanderColorAccessByTurn`
+- `castabilityByTurn`
+- `commanderTiming`
+
+Legacy compatibility fields are still exposed:
+- Mana:
+  - `manaDevelopment.turns` (legacy alias of mana timeline values)
+- Color:
+  - `turns[].allColors` (legacy alias for full commander identity access)
+  - `commanderColorAccessByTurn` (legacy alias)
+- Castability:
+  - `turns[].curvePlay` (legacy alias for on-curve by turn-cost)
+
+Canonical naming notes:
+- `allColors` -> `fullCommanderIdentityAccess`
+- `curvePlay` -> `onCurveSpellByTurnCost`
+
+Heuristic opening-hand labels (for example 2-4 land hands, low-land, high-land) remain reporting metrics and are not part of the canonical feature shape.
 
 ## Display Notes
 - In the Color & Curve table, per-color columns are displayed with official MTG mana symbols from Scryfall SVGs (`W`, `U`, `B`, `R`, `G`).

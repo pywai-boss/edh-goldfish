@@ -103,3 +103,19 @@ Maintain a small manual override system for key cards (e.g. Sol Ring, Dark Ritua
 Measure what the deck can DO, not what it CONTAINS.
 
 ---
+
+## Long-Term Direction
+
+V1 is building the measurement foundation for a future functional-hand model.
+
+The current goal is not to define mulligan rules or a final hand score yet.
+
+The tool should measure castability, mana development, color access, and commander timing in a structured way.
+
+These measurements should later support:
+- a functional hand scoring model
+- benchmarking
+- linear programming / optimization
+- future recommendations
+
+The long-term goal is to optimize deck construction by improving the probability of functional hands. V1 should therefore avoid hard-coded judgments like "2-4 lands is good" and instead collect reusable features that can later feed a scoring function or optimizer.
