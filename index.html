@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>EDH Goldfish Lab</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="top-bar" aria-label="Deck simulator controls">
+        <div>
+          <p class="eyebrow">Commander opening hands</p>
+          <h1>EDH Goldfish Lab</h1>
+        </div>
+        <div class="run-area">
+          <p class="step-label">Step 3</p>
+          <div class="run-controls">
+            <label class="field compact">
+              <span>Hands</span>
+              <input id="simulation-count" type="number" min="100" max="250000" step="1000" value="10000" />
+            </label>
+            <button id="simulate-button" class="primary-button" type="button" disabled>Simulate</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="workspace" aria-label="Deck workspace">
+        <aside class="import-panel" aria-label="Deck import">
+          <div id="deck-setup-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="step-label">Step 1</p>
+                <h2>Load Deck</h2>
+              </div>
+              <div class="button-row">
+                <button id="sample-button" class="secondary-button" type="button">Sample</button>
+                <button id="clear-button" class="ghost-button" type="button">Clear</button>
+              </div>
+            </div>
+
+            <label class="file-drop" for="deck-file">
+              <input id="deck-file" type="file" accept=".txt,.dec,.dek,.csv" />
+              <span>Upload Moxfield export</span>
+            </label>
+
+            <div id="deck-editor" class="deck-editor">
+              <label class="field deck-input">
+                <span>Paste list</span>
+                <textarea id="deck-text" spellcheck="false" placeholder="COMMANDER&#10;1 Atraxa, Praetors' Voice&#10;&#10;LANDS&#10;1 Command Tower&#10;1 Exotic Orchard&#10;4 Forest&#10;&#10;ARTIFACTS&#10;1 Sol Ring #ramp&#10;1 Arcane Signet #ramp"></textarea>
+              </label>
+            </div>
+
+            <div class="parse-panel">
+              <p class="step-label">Step 2</p>
+              <button id="parse-button" class="secondary-button wide-button" type="button" disabled>
+                Parse & Tag Deck
+              </button>
+            </div>
+
+            <div id="commander-setup" class="commander-setup is-hidden">
+              <p class="step-label">Command Zone</p>
+              <div class="commander-select-grid">
+                <label class="commander-picker">
+                  <span>Commander</span>
+                  <select class="commander-select" data-commander-slot="0"></select>
+                </label>
+                <label class="commander-picker">
+                  <span>Second commander</span>
+                  <select class="commander-select" data-commander-slot="1"></select>
+                </label>
+              </div>
+              <p id="commander-note" class="commander-note"></p>
+            </div>
+
+            <div id="parse-notes" class="notes" aria-live="polite"></div>
+          </div>
+        </aside>
+
+        <section class="results-panel" aria-label="Simulation results">
+          <section id="loaded-deck-toolbar" class="loaded-deck-toolbar is-hidden" aria-live="polite">
+            <p id="loaded-deck-status" class="loaded-deck-toolbar-text"></p>
+            <div id="commander-picker" class="commander-select-grid compact is-hidden">
+              <label class="commander-picker">
+                <span>Commander</span>
+                <select class="commander-select" data-commander-slot="0"></select>
+              </label>
+              <label class="commander-picker">
+                <span>Second commander</span>
+                <select class="commander-select" data-commander-slot="1"></select>
+              </label>
+            </div>
+            <div class="loaded-deck-toolbar-actions">
+              <button id="edit-list-button" class="secondary-button" type="button">Edit List</button>
+              <button id="toggle-review-button" class="secondary-button" type="button" disabled>Review Tags</button>
+              <button id="clear-loaded-button" class="ghost-button" type="button">Clear</button>
+            </div>
+          </section>
+
+          <section id="deck-review-panel" class="chart-panel deck-review-panel is-hidden" aria-label="Deck tag review">
+            <div class="section-heading">
+              <h2>Deck Tag Review</h2>
+              <span id="deck-review-summary" class="muted-value">Parse deck</span>
+            </div>
+            <div class="review-toolbar">
+              <button id="toggle-review-details-button" class="ghost-button" type="button" disabled>Show Details</button>
+            </div>
+            <div id="deck-review-groups" class="deck-review-groups is-hidden"></div>
+          </section>
+
+          <div class="metric-grid" id="deck-metrics"></div>
+
+          <section class="chart-panel" aria-label="Color and curve analysis">
+            <div class="section-heading">
+              <h2>Color & Curve</h2>
+              <span id="color-curve-summary" class="muted-value">Run a simulation</span>
+            </div>
+            <div id="color-curve-cards" class="mini-metric-grid"></div>
+            <div id="color-curve-table" class="curve-table-wrap"></div>
+          </section>
+
+          <div class="stats-layout">
+            <section class="chart-panel" aria-label="Land distribution">
+              <div class="section-heading">
+                <h2>Land Distribution</h2>
+                <span id="land-average" class="muted-value"></span>
+              </div>
+              <div id="land-chart" class="bar-list"></div>
+            </section>
+
+            <section class="chart-panel" aria-label="Mana stats">
+              <div class="section-heading">
+                <h2>Mana Snapshot</h2>
+                <span id="keep-rate" class="muted-value"></span>
+              </div>
+              <div id="mana-stats" class="stat-list"></div>
+            </section>
+          </div>
+
+          <section class="chart-panel" aria-label="Sample hands">
+            <div class="section-heading">
+              <h2>Sample Hands</h2>
+              <span class="muted-value">Current run</span>
+            </div>
+            <div id="sample-hands" class="sample-grid"></div>
+          </section>
+        </section>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
