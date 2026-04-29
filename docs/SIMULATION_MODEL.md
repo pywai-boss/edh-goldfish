@@ -52,6 +52,17 @@ Describe the current turn-by-turn simulation model and how game-state estimates 
     - 6+ mana on turn 6
     - 7+ mana on turn 7
     - 8+ mana on turn 8
+- Reusable result structure includes:
+  - `manaByTurn` (normalized timeline for turn 1-8)
+  - `manaDevelopment.turns` (legacy-compatible timeline)
+
+## Color Access Aggregation
+- Color access is tracked turn-by-turn for turns 1-8.
+- Reusable result structure includes:
+  - `colorsByTurn` (per-turn per-color hit counts)
+  - `commanderColorAccessByTurn` (alias to per-turn commander color hits)
+  - `fullCommanderColorAccessByTurn` (per-turn full identity access hit counts)
+- Existing UI still uses the same underlying `turns` structure, with reusable aliases added for V1 foundation use.
 
 ## Known Limitations
 - This model is heuristic and intentionally not a full rules engine.

@@ -339,10 +339,15 @@ const allForestTimelineRun = runSimulation(buildLibrary([cardWithCount(forest, 9
   handSize: 7,
 });
 assert.equal(allForestTimelineRun.manaDevelopment.turns.length, 8);
+assert.equal(allForestTimelineRun.manaByTurn.length, 8);
 assert.equal(allForestTimelineRun.manaDevelopment.turns[0].averageAvailableMana, 1);
 assert.equal(allForestTimelineRun.manaDevelopment.turns[1].averageAvailableMana, 2);
 assert.equal(allForestTimelineRun.manaDevelopment.turns[7].averageAvailableMana, 8);
+assert.equal(allForestTimelineRun.manaByTurn[0].averageTotalMana, 1);
+assert.equal(allForestTimelineRun.manaByTurn[7].averageTotalMana, 8);
 assert.equal(allForestTimelineRun.manaDevelopment.turns[1].atLeastThresholdCount, 5);
 assert.equal(allForestTimelineRun.manaDevelopment.turns[7].atLeastThresholdCount, 5);
+assert.equal(allForestTimelineRun.manaByTurn[1].atLeastThresholdCount, 5);
+assert.equal(allForestTimelineRun.manaByTurn[7].atLeastThresholdCount, 5);
 
 console.log("otag-role-tests-ok");

@@ -119,6 +119,19 @@ h2 {
   line-height: 1.2;
 }
 
+.mana-icons {
+  display: inline-flex;
+  gap: 4px;
+  vertical-align: middle;
+  margin-left: 4px;
+}
+
+.mana-icon {
+  width: 18px;
+  height: 18px;
+  vertical-align: middle;
+}
+
 .run-area {
   display: grid;
   gap: 6px;

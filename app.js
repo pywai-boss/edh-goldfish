@@ -64,6 +64,14 @@ const ROLE_LABELS = {
 };
 
 const MANA_COLORS = ["W", "U", "B", "R", "G"];
+const MANA_SYMBOL_URLS = {
+  W: "https://svgs.scryfall.io/card-symbols/W.svg",
+  U: "https://svgs.scryfall.io/card-symbols/U.svg",
+  B: "https://svgs.scryfall.io/card-symbols/B.svg",
+  R: "https://svgs.scryfall.io/card-symbols/R.svg",
+  G: "https://svgs.scryfall.io/card-symbols/G.svg",
+  C: "https://svgs.scryfall.io/card-symbols/C.svg",
+};
 const BASIC_LAND_COLORS = {
   plains: "W",
   island: "U",
@@ -412,6 +420,24 @@ function getRelevantColors(commanderColorIdentity = []) {
 
 function formatColorIdentity(colors) {
   return colors.length > 0 ? colors.join("") : "Colorless";
+}
+
+function createManaIcon(color) {
+  const icon = createElement("img", "mana-icon");
+  icon.src = MANA_SYMBOL_URLS[color] || MANA_SYMBOL_URLS.C;
+  icon.alt = color;
+  icon.loading = "lazy";
+  return icon;
+}
+
+function createManaIconGroup(colors = [], includeColorlessWhenEmpty = true) {
+  const group = createElement("span", "mana-icons");
+  const normalized = colors.filter((color) => MANA_SYMBOL_URLS[color]);
+  const iconColors = normalized.length > 0 ? normalized : includeColorlessWhenEmpty ? ["C"] : [];
+  iconColors.forEach((color) => {
+    group.append(createManaIcon(color));
+  });
+  return group;
 }
 
 function getProducedColors(card, deckColors = []) {
@@ -942,16 +968,24 @@ function runSimulation(library, options = {}) {
     }
   }
 
+  const manaByTurn = Array.from({ length: 8 }, (_, index) => ({
+    turn: index + 1,
+    averageTotalMana: manaTotalsByTurn[index] / simulations,
+    threshold: index + 1,
+    atLeastThresholdCount: thresholdHitsByTurn[index],
+  }));
+
   return {
     simulations,
     handSize,
     distribution,
+    manaByTurn,
     manaDevelopment: {
-      turns: Array.from({ length: 8 }, (_, index) => ({
-        turn: index + 1,
-        averageAvailableMana: manaTotalsByTurn[index] / simulations,
-        threshold: index + 1,
-        atLeastThresholdCount: thresholdHitsByTurn[index],
+      turns: manaByTurn.map((entry) => ({
+        turn: entry.turn,
+        averageAvailableMana: entry.averageTotalMana,
+        threshold: entry.threshold,
+        atLeastThresholdCount: entry.atLeastThresholdCount,
       })),
     },
     counters,
@@ -1072,9 +1106,21 @@ function simulateColorAccess(deck, iterations = 10000, commanderColorIdentity = 
     }
   }
 
+  const colorsByTurn = turnStats.map((turnData) => ({
+    turn: turnData.turn,
+    colorHits: { ...turnData.colors },
+  }));
+  const fullCommanderColorAccessByTurn = turnStats.map((turnData) => ({
+    turn: turnData.turn,
+    hitCount: turnData.allColors,
+  }));
+
   return {
     iterations,
     deckColors,
+    colorsByTurn,
+    commanderColorAccessByTurn: colorsByTurn,
+    fullCommanderColorAccessByTurn,
     turns: turnStats,
   };
 }
@@ -1541,13 +1587,21 @@ function renderLoadState() {
   if (shouldCollapse) {
     const parsed = appState.parsed;
     const commanderLabel = appState.selectedCommanders.length === 2 ? "Commanders" : "Commander";
-    const commanderText =
-      appState.selectedCommanders.length > 0
-        ? `${commanderLabel}: ${appState.selectedCommanders.join(" + ")} · ${formatColorIdentity(appState.commanderColorIdentity)}`
-        : "Commander: Select one";
     const partnerNote =
       appState.selectedCommanders.length === 2 ? " · Two commanders selected; legality is not validated yet." : "";
-    loadedDeckStatus.textContent = `Loaded Deck: ${parsed.totals.total} cards total · ${parsed.totals.library}-card library · ${commanderText} · ${parsed.totals.lands} lands${partnerNote}`;
+    loadedDeckStatus.replaceChildren();
+    loadedDeckStatus.append(document.createTextNode(`Loaded Deck: ${parsed.totals.total} cards total · ${parsed.totals.library}-card library · `));
+
+    if (appState.selectedCommanders.length > 0) {
+      loadedDeckStatus.append(
+        document.createTextNode(`${commanderLabel}: ${appState.selectedCommanders.join(" + ")} `),
+      );
+      loadedDeckStatus.append(createManaIconGroup(appState.commanderColorIdentity, true));
+    } else {
+      loadedDeckStatus.append(document.createTextNode("Commander: Select one"));
+    }
+
+    loadedDeckStatus.append(document.createTextNode(` · ${parsed.totals.lands} lands${partnerNote}`));
   }
 
   const showManualCommanderPicker = hasParsedDeck && appState.commanderSelectionMode === "manual";
@@ -1747,7 +1801,13 @@ function renderColorCurveAnalysis(colorResult, curveResult, commanderCastResult 
       ? ["Turn", ...relevantColors, "Commander Colors", "Total Mana", "Castable Spell"]
       : ["Turn", "Color Access", "Total Mana", "Castable Spell"];
   headers.forEach((label) => {
-    headRow.append(createElement("th", "", label));
+    const cell = createElement("th");
+    if (MANA_COLORS.includes(label)) {
+      cell.append(createManaIcon(label));
+    } else {
+      cell.textContent = label;
+    }
+    headRow.append(cell);
   });
   head.append(headRow);
   table.append(head);
@@ -1770,7 +1830,9 @@ function renderColorCurveAnalysis(colorResult, curveResult, commanderCastResult 
       createElement(
         "td",
         "",
-        simulationResult?.manaDevelopment?.turns?.[turn - 1]?.averageAvailableMana?.toFixed(2) || "--",
+        simulationResult?.manaByTurn?.[turn - 1]?.averageTotalMana?.toFixed(2) ||
+          simulationResult?.manaDevelopment?.turns?.[turn - 1]?.averageAvailableMana?.toFixed(2) ||
+          "--",
       ),
     );
     row.append(createElement("td", "", getTurnPercent(curveResult, turn, "anyCastable")));
@@ -1779,18 +1841,19 @@ function renderColorCurveAnalysis(colorResult, curveResult, commanderCastResult 
   table.append(body);
   tableWrap.append(table);
 
-  if (simulationResult?.manaDevelopment?.turns) {
+  if (simulationResult?.manaByTurn || simulationResult?.manaDevelopment?.turns) {
+    const timeline = simulationResult.manaByTurn || simulationResult.manaDevelopment.turns;
     const thresholdSummary = createElement(
       "div",
       "muted-value",
       [
-        `2+ on T2 ${percent(simulationResult.manaDevelopment.turns[1].atLeastThresholdCount, simulationResult.simulations)}`,
-        `3+ on T3 ${percent(simulationResult.manaDevelopment.turns[2].atLeastThresholdCount, simulationResult.simulations)}`,
-        `4+ on T4 ${percent(simulationResult.manaDevelopment.turns[3].atLeastThresholdCount, simulationResult.simulations)}`,
-        `5+ on T5 ${percent(simulationResult.manaDevelopment.turns[4].atLeastThresholdCount, simulationResult.simulations)}`,
-        `6+ on T6 ${percent(simulationResult.manaDevelopment.turns[5].atLeastThresholdCount, simulationResult.simulations)}`,
-        `7+ on T7 ${percent(simulationResult.manaDevelopment.turns[6].atLeastThresholdCount, simulationResult.simulations)}`,
-        `8+ on T8 ${percent(simulationResult.manaDevelopment.turns[7].atLeastThresholdCount, simulationResult.simulations)}`,
+        `2+ on T2 ${percent(timeline[1].atLeastThresholdCount, simulationResult.simulations)}`,
+        `3+ on T3 ${percent(timeline[2].atLeastThresholdCount, simulationResult.simulations)}`,
+        `4+ on T4 ${percent(timeline[3].atLeastThresholdCount, simulationResult.simulations)}`,
+        `5+ on T5 ${percent(timeline[4].atLeastThresholdCount, simulationResult.simulations)}`,
+        `6+ on T6 ${percent(timeline[5].atLeastThresholdCount, simulationResult.simulations)}`,
+        `7+ on T7 ${percent(timeline[6].atLeastThresholdCount, simulationResult.simulations)}`,
+        `8+ on T8 ${percent(timeline[7].atLeastThresholdCount, simulationResult.simulations)}`,
       ].join(" | "),
     );
     tableWrap.append(thresholdSummary);

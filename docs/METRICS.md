@@ -59,3 +59,18 @@ Define all reported metrics and how each one is calculated.
 - All percentages are computed over simulation iterations.
 - Castability combines total mana requirement and color/pip requirement checks.
 - Heuristic assumptions are used; this is not a full game rules engine.
+
+## Reusable Data Outputs
+- `runSimulation(...)` exposes:
+  - `manaByTurn`
+  - `manaDevelopment.turns` (compatibility path)
+- `simulateColorAccess(...)` exposes:
+  - `colorsByTurn`
+  - `commanderColorAccessByTurn`
+  - `fullCommanderColorAccessByTurn`
+  - `turns` (compatibility path)
+
+## Display Notes
+- In the Color & Curve table, per-color columns are displayed with official MTG mana symbols from Scryfall SVGs (`W`, `U`, `B`, `R`, `G`).
+- Color identity display in the loaded deck toolbar also uses these mana symbols.
+- Colorless identity uses the `C` symbol.
