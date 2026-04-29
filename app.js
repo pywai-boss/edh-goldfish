@@ -884,7 +884,10 @@ function createEmptyDistribution(handSize) {
 function runSimulation(library, options = {}) {
   const handSize = options.handSize ?? 7;
   const simulations = options.simulations ?? 10000;
+  const deckColors = getDeckColors(library);
   const distribution = createEmptyDistribution(handSize);
+  const manaTotalsByTurn = Array.from({ length: 8 }, () => 0);
+  const thresholdHitsByTurn = Array.from({ length: 8 }, () => 0);
   const counters = {
     keepableLands: 0,
     lowLand: 0,
@@ -902,7 +905,8 @@ function runSimulation(library, options = {}) {
   let totalLands = 0;
 
   for (let i = 0; i < simulations; i += 1) {
-    const hand = drawHand(library, handSize);
+    const draws = drawCards(library, OPENING_HAND_SIZE + 7);
+    const hand = draws.slice(0, handSize);
     const summary = summarizeHand(hand);
     distribution.set(summary.lands, (distribution.get(summary.lands) || 0) + 1);
     totalLands += summary.lands;
@@ -926,12 +930,30 @@ function runSimulation(library, options = {}) {
     if (!examples.high && summary.highLand) {
       examples.high = { hand, summary };
     }
+
+    for (let turn = 1; turn <= 8; turn += 1) {
+      const visibleCards = getVisibleCardsForTurn(draws, turn);
+      const availableMana = getAvailableManaForTurn(visibleCards, turn, deckColors);
+      manaTotalsByTurn[turn - 1] += availableMana.total;
+
+      if (turn >= 2 && availableMana.total >= turn) {
+        thresholdHitsByTurn[turn - 1] += 1;
+      }
+    }
   }
 
   return {
     simulations,
     handSize,
     distribution,
+    manaDevelopment: {
+      turns: Array.from({ length: 8 }, (_, index) => ({
+        turn: index + 1,
+        averageAvailableMana: manaTotalsByTurn[index] / simulations,
+        threshold: index + 1,
+        atLeastThresholdCount: thresholdHitsByTurn[index],
+      })),
+    },
     counters,
     averageLands: totalLands / simulations,
     examples: Object.values(examples).filter(Boolean),
@@ -1683,7 +1705,7 @@ function renderCommanderCastMetrics(container, commanderCastResult) {
   }
 }
 
-function renderColorCurveAnalysis(colorResult, curveResult, commanderCastResult = null) {
+function renderColorCurveAnalysis(colorResult, curveResult, commanderCastResult = null, simulationResult = null) {
   const summary = document.querySelector("#color-curve-summary");
   const cards = document.querySelector("#color-curve-cards");
   const tableWrap = document.querySelector("#color-curve-table");
@@ -1722,8 +1744,8 @@ function renderColorCurveAnalysis(colorResult, curveResult, commanderCastResult 
   const headRow = createElement("tr");
   const headers =
     relevantColors.length > 0
-      ? ["Turn", ...relevantColors, "Commander Colors", "Castable Spell"]
-      : ["Turn", "Color Access", "Castable Spell"];
+      ? ["Turn", ...relevantColors, "Commander Colors", "Total Mana", "Castable Spell"]
+      : ["Turn", "Color Access", "Total Mana", "Castable Spell"];
   headers.forEach((label) => {
     headRow.append(createElement("th", "", label));
   });
@@ -1744,11 +1766,35 @@ function renderColorCurveAnalysis(colorResult, curveResult, commanderCastResult 
         relevantColors.length > 0 ? getTurnPercent(colorResult, turn, "allColors") : "Not needed",
       ),
     );
+    row.append(
+      createElement(
+        "td",
+        "",
+        simulationResult?.manaDevelopment?.turns?.[turn - 1]?.averageAvailableMana?.toFixed(2) || "--",
+      ),
+    );
     row.append(createElement("td", "", getTurnPercent(curveResult, turn, "anyCastable")));
     body.append(row);
   }
   table.append(body);
   tableWrap.append(table);
+
+  if (simulationResult?.manaDevelopment?.turns) {
+    const thresholdSummary = createElement(
+      "div",
+      "muted-value",
+      [
+        `2+ on T2 ${percent(simulationResult.manaDevelopment.turns[1].atLeastThresholdCount, simulationResult.simulations)}`,
+        `3+ on T3 ${percent(simulationResult.manaDevelopment.turns[2].atLeastThresholdCount, simulationResult.simulations)}`,
+        `4+ on T4 ${percent(simulationResult.manaDevelopment.turns[3].atLeastThresholdCount, simulationResult.simulations)}`,
+        `5+ on T5 ${percent(simulationResult.manaDevelopment.turns[4].atLeastThresholdCount, simulationResult.simulations)}`,
+        `6+ on T6 ${percent(simulationResult.manaDevelopment.turns[5].atLeastThresholdCount, simulationResult.simulations)}`,
+        `7+ on T7 ${percent(simulationResult.manaDevelopment.turns[6].atLeastThresholdCount, simulationResult.simulations)}`,
+        `8+ on T8 ${percent(simulationResult.manaDevelopment.turns[7].atLeastThresholdCount, simulationResult.simulations)}`,
+      ].join(" | "),
+    );
+    tableWrap.append(thresholdSummary);
+  }
 }
 
 function renderSampleHands(result) {
@@ -2054,7 +2100,7 @@ function simulateCurrentDeck() {
   renderDeckTagReview(parsed);
   renderLandChart(result);
   renderManaStats(result);
-  renderColorCurveAnalysis(colorResult, curveResult, commanderCastResult);
+  renderColorCurveAnalysis(colorResult, curveResult, commanderCastResult, result);
   renderSampleHands(result);
   renderNotes(parsed, "Simulation complete");
   renderLoadState();

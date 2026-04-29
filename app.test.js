@@ -11,6 +11,7 @@ const {
   getProducedColors,
   getRelevantColors,
   hasOtag,
+  runSimulation,
   simulateCommanderCastAccess,
   simulateColorAccess,
   summarizeDeck,
@@ -332,5 +333,16 @@ const colorlessCommanderRun = simulateCommanderCastAccess(
 );
 assert.equal(colorlessCommanderRun.commanders[0].targetTurn, 4);
 assert.equal(colorlessCommanderRun.commanders[0].castableByTarget, 5);
+
+const allForestTimelineRun = runSimulation(buildLibrary([cardWithCount(forest, 99)]), {
+  simulations: 5,
+  handSize: 7,
+});
+assert.equal(allForestTimelineRun.manaDevelopment.turns.length, 8);
+assert.equal(allForestTimelineRun.manaDevelopment.turns[0].averageAvailableMana, 1);
+assert.equal(allForestTimelineRun.manaDevelopment.turns[1].averageAvailableMana, 2);
+assert.equal(allForestTimelineRun.manaDevelopment.turns[7].averageAvailableMana, 8);
+assert.equal(allForestTimelineRun.manaDevelopment.turns[1].atLeastThresholdCount, 5);
+assert.equal(allForestTimelineRun.manaDevelopment.turns[7].atLeastThresholdCount, 5);
 
 console.log("otag-role-tests-ok");
