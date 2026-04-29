@@ -3,6 +3,19 @@
 ## Purpose
 Describe the current turn-by-turn simulation model and how game-state estimates are derived.
 
+## Automated Testability
+- Simulation logic is testable from Node without browser/UI dependencies.
+- Core functions are exported from `app.js` and can be validated with fixture-based unit tests.
+- Test execution command:
+  - `npm test`
+- Current automated test scope focuses on:
+  - timeline shape stability (turns 1-8)
+  - canonical feature output fields
+  - color access outputs
+  - castability outputs
+  - commander exclusion from library construction
+- Tests use mocked card objects and do not call Scryfall.
+
 ## Canonical Feature Shape
 The simulation layer now exposes a canonical `SimulationFeatures`-style shape for reuse by V1 and future scoring/benchmarking work:
 

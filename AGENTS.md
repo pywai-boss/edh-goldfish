@@ -25,3 +25,16 @@ Every task must include:
 2. Docs updated
 3. Manual test performed
 4. Known limitations noted
+
+## Test Execution Rules
+When making changes to simulation logic, data models, or feature computation:
+- Run tests using:
+  - `npm test`
+- Ensure all tests pass before considering the task complete.
+- If tests fail:
+  - Do NOT disable or weaken tests
+  - Fix the underlying issue
+
+Do NOT run tests for:
+- documentation-only changes
+- pure UI layout changes that do not affect data or logic
