@@ -1196,6 +1196,28 @@ function getCommanderTargetTurn(requirements) {
   return requirements.total > 8 ? 8 : requirements.total;
 }
 
+function hasCommanderColors(availableMana, requirements) {
+  return MANA_COLORS.every((color) => availableMana.colorCounts[color] >= requirements.colors[color]);
+}
+
+function evaluateCommanderFailureReasonByTarget(availableManaByTurn, requirements, targetTurn) {
+  const turnsToCheck = availableManaByTurn.slice(0, targetTurn);
+  const hadEnoughManaByTarget = turnsToCheck.some((availableMana) => availableMana.total >= requirements.total);
+  const hadRequiredColorsByTarget =
+    requirements.colorPips === 0 || turnsToCheck.some((availableMana) => hasCommanderColors(availableMana, requirements));
+
+  if (!hadEnoughManaByTarget && !hadRequiredColorsByTarget) {
+    return "both";
+  }
+  if (!hadEnoughManaByTarget) {
+    return "insufficient_mana";
+  }
+  if (!hadRequiredColorsByTarget) {
+    return "missing_colors";
+  }
+  return "both";
+}
+
 function simulateCommanderCastAccess(
   deck,
   commanders = [],
@@ -1216,6 +1238,15 @@ function simulateCommanderCastAccess(
       name: commander.name,
       requirements,
       targetTurn,
+      commanderCastableOnCurve: 0,
+      earliestCommanderCastTurnSum: 0,
+      earliestCommanderCastTurnCount: 0,
+      failureBreakdown: {
+        insufficient_mana: 0,
+        missing_colors: 0,
+        both: 0,
+        not_castable_by_turn_8: 0,
+      },
       castableByTarget: 0,
       castableBy8: 0,
       castableTurnSum: 0,
@@ -1228,14 +1259,31 @@ function simulateCommanderCastAccess(
   for (let iteration = 0; iteration < iterations; iteration += 1) {
     const draws = drawCards(library, OPENING_HAND_SIZE + 7);
     const earliestCastTurns = Array.from({ length: commanderStats.length }, () => null);
+    const availableManaByTurn = [];
+    const manaByTurn = [];
+    const colorsByTurn = [];
+    const fullCommanderColorAccessByTurn = [];
 
     for (let turn = 1; turn <= 8; turn += 1) {
       const visibleCards = getVisibleCardsForTurn(draws, turn);
       const availableMana = getAvailableManaForTurn(visibleCards, turn, deckColors);
+      availableManaByTurn.push(availableMana);
+      manaByTurn.push({
+        turn,
+        totalMana: availableMana.total,
+      });
+      colorsByTurn.push({
+        turn,
+        colorHits: Object.fromEntries(MANA_COLORS.map((color) => [color, availableMana.colorCounts[color] > 0 ? 1 : 0])),
+      });
+      fullCommanderColorAccessByTurn.push({
+        turn,
+        hasFullCommanderIdentity: deckColors.every((color) => availableMana.colorCounts[color] > 0),
+      });
 
       commanderStats.forEach((stats, index) => {
         if (earliestCastTurns[index] !== null) return;
-        if (canPayManaCost(availableMana, stats.requirements)) {
+        if (manaByTurn[turn - 1].totalMana >= stats.requirements.total && canPayManaCost(availableMana, stats.requirements)) {
           earliestCastTurns[index] = turn;
         }
       });
@@ -1243,13 +1291,29 @@ function simulateCommanderCastAccess(
 
     commanderStats.forEach((stats, index) => {
       const castTurn = earliestCastTurns[index];
-      if (castTurn === null) return;
-      if (castTurn <= stats.targetTurn) {
+      const castableOnCurve = castTurn !== null && castTurn <= stats.targetTurn;
+
+      if (castableOnCurve) {
+        stats.commanderCastableOnCurve += 1;
         stats.castableByTarget += 1;
+      } else if (castTurn === null) {
+        stats.failureBreakdown.not_castable_by_turn_8 += 1;
+      } else {
+        const failureReason = evaluateCommanderFailureReasonByTarget(
+          availableManaByTurn,
+          stats.requirements,
+          stats.targetTurn,
+        );
+        stats.failureBreakdown[failureReason] += 1;
       }
-      stats.castableBy8 += 1;
-      stats.castableTurnSum += castTurn;
-      stats.castableTurnCount += 1;
+
+      if (castTurn !== null) {
+        stats.earliestCommanderCastTurnSum += castTurn;
+        stats.earliestCommanderCastTurnCount += 1;
+        stats.castableBy8 += 1;
+        stats.castableTurnSum += castTurn;
+        stats.castableTurnCount += 1;
+      }
     });
 
     if (earliestCastTurns.length === 2 && earliestCastTurns.every((turn) => turn !== null && turn <= 8)) {
@@ -1261,6 +1325,16 @@ function simulateCommanderCastAccess(
     iterations,
     commanders: commanderStats.map((stats) => ({
       ...stats,
+      averageEarliestCommanderCastTurn:
+        stats.earliestCommanderCastTurnCount > 0
+          ? stats.earliestCommanderCastTurnSum / stats.earliestCommanderCastTurnCount
+          : null,
+      earliestCommanderCastTurn:
+        stats.earliestCommanderCastTurnCount > 0
+          ? stats.earliestCommanderCastTurnSum / stats.earliestCommanderCastTurnCount
+          : null,
+      failureReason: { ...stats.failureBreakdown },
+      failureReasonBreakdown: { ...stats.failureBreakdown },
       averageCastableTurn:
         stats.castableTurnCount > 0 ? stats.castableTurnSum / stats.castableTurnCount : null,
     })),
@@ -1472,11 +1546,11 @@ function renderDeckTagReview(parsed) {
   const reviewPanel = document.querySelector("#deck-review-panel");
   const toggleDetailsButton = document.querySelector("#toggle-review-details-button");
   const hasParsedDeck = Boolean(parsed && parsed.cards.length > 0);
-  const shouldShowReview = hasParsedDeck && appState.isDeckPanelCollapsed && appState.reviewOpen;
+  const shouldShowReview = hasParsedDeck && appState.reviewOpen;
   groupsContainer.replaceChildren();
 
   if (!hasParsedDeck) {
-    summary.textContent = "Parse deck";
+    summary.textContent = "Analyze deck";
     toggleReviewButton.disabled = true;
     toggleReviewButton.textContent = "Review Tags";
     toggleDetailsButton.disabled = true;
@@ -1541,8 +1615,10 @@ const appState = {
   libraryCards: [],
   library: [],
   simulationFeatures: null,
+  awaitingCommanderConfirmation: false,
   isDeckPanelCollapsed: false,
   isParsing: false,
+  isAnalyzing: false,
   reviewOpen: false,
   reviewShowDetails: false,
   selectedCommanders: [],
@@ -1593,31 +1669,41 @@ function renderNotes(parsed, leadingMessage = "") {
 }
 
 function renderLoadState() {
+  const deckText = document.querySelector("#deck-text");
   const workspace = document.querySelector(".workspace");
   const importPanel = document.querySelector(".import-panel");
-  const deckText = document.querySelector("#deck-text");
-  const deckSetupPanel = document.querySelector("#deck-setup-panel");
+  const modalBackdrop = document.querySelector("#commander-modal-backdrop");
+  const resultsPanel = document.querySelector(".results-panel");
   const loadedDeckToolbar = document.querySelector("#loaded-deck-toolbar");
   const loadedDeckStatus = document.querySelector("#loaded-deck-status");
-  const commanderPicker = document.querySelector("#commander-picker");
   const commanderSetup = document.querySelector("#commander-setup");
+  const commanderModalTitle = document.querySelector("#commander-modal-title");
+  const commanderLoadingState = document.querySelector("#commander-loading-state");
+  const commanderLoadingText = document.querySelector("#commander-loading-text");
+  const commanderConfirmationContent = document.querySelector("#commander-confirmation-content");
+  const commanderConfirmAnalyzeButton = document.querySelector("#commander-confirm-analyze");
+  const commanderConfirmBackButton = document.querySelector("#commander-confirm-back");
   const commanderNote = document.querySelector("#commander-note");
   const commanderSelects = document.querySelectorAll(".commander-select");
-  const parseButton = document.querySelector("#parse-button");
-  const simulateButton = document.querySelector("#simulate-button");
+  const analyzeButton = document.querySelector("#analyze-button");
   const hasDeckText = deckText.value.trim().length > 0;
-  const hasParsedDeck = Boolean(appState.parsed && appState.library.length > 0);
-  const shouldCollapse = appState.isDeckPanelCollapsed && hasParsedDeck;
+  const hasParsedDeck = Boolean(appState.parsed && appState.parsed.cards.length > 0);
+  const hasAnalysis = Boolean(appState.simulationFeatures);
+  const isAwaitingConfirmation = appState.awaitingCommanderConfirmation && hasParsedDeck;
+  const shouldCollapseInput = appState.isDeckPanelCollapsed && hasParsedDeck && hasAnalysis;
+  const actionLabel = "Continue";
+  const isCommanderModalOpen = appState.isParsing || isAwaitingConfirmation;
 
-  workspace.classList.toggle("results-focus", shouldCollapse);
-  importPanel.classList.toggle("is-hidden", shouldCollapse);
-  deckSetupPanel.classList.remove("is-hidden");
-  loadedDeckToolbar.classList.toggle("is-hidden", !shouldCollapse);
-  parseButton.disabled = !hasDeckText || appState.isParsing;
-  parseButton.textContent = appState.isParsing ? "Parsing..." : "Parse & Tag Deck";
-  simulateButton.disabled = appState.library.length === 0;
+  workspace.classList.toggle("results-focus", shouldCollapseInput);
+  importPanel.classList.toggle("is-hidden", shouldCollapseInput);
+  loadedDeckToolbar.classList.toggle("is-hidden", !shouldCollapseInput);
+  analyzeButton.disabled =
+    appState.isParsing ||
+    (!hasParsedDeck && !hasDeckText) ||
+    (isAwaitingConfirmation && appState.selectedCommanders.length === 0);
+  analyzeButton.textContent = appState.isParsing ? `${actionLabel}...` : actionLabel;
 
-  if (shouldCollapse) {
+  if (shouldCollapseInput) {
     const parsed = appState.parsed;
     const commanderLabel = appState.selectedCommanders.length === 2 ? "Commanders" : "Commander";
     const partnerNote =
@@ -1631,25 +1717,44 @@ function renderLoadState() {
       );
       loadedDeckStatus.append(createManaIconGroup(appState.commanderColorIdentity, true));
     } else {
-      loadedDeckStatus.append(document.createTextNode("Commander: Select one"));
+      loadedDeckStatus.append(document.createTextNode("Commander: Confirm selection"));
     }
 
     loadedDeckStatus.append(document.createTextNode(` · ${parsed.totals.lands} lands${partnerNote}`));
   }
 
-  const showManualCommanderPicker = hasParsedDeck && appState.commanderSelectionMode === "manual";
-  commanderPicker.classList.toggle(
-    "is-hidden",
-    !shouldCollapse || !showManualCommanderPicker,
-  );
-  commanderSetup.classList.toggle("is-hidden", shouldCollapse || !showManualCommanderPicker);
+  commanderSetup.classList.toggle("is-hidden", (!hasParsedDeck && !appState.isParsing) || shouldCollapseInput);
+  commanderSetup.classList.toggle("is-modal-open", isCommanderModalOpen && !shouldCollapseInput);
+  modalBackdrop?.classList.toggle("is-hidden", !isCommanderModalOpen || shouldCollapseInput);
+  modalBackdrop?.setAttribute("aria-hidden", isCommanderModalOpen && !shouldCollapseInput ? "false" : "true");
+  commanderLoadingState?.classList.toggle("is-hidden", !appState.isParsing && !appState.isAnalyzing);
+  commanderConfirmationContent?.classList.toggle("is-hidden", appState.isParsing || appState.isAnalyzing);
+  commanderLoadingText.textContent = appState.isAnalyzing
+    ? "Checking mana, colors, and commander timing..."
+    : "Reading cards and finding commander options...";
+  if (commanderModalTitle) {
+    if (appState.isParsing) {
+      commanderModalTitle.textContent = "Preparing deck";
+    } else if (appState.isAnalyzing) {
+      commanderModalTitle.textContent = "Running analysis";
+    } else {
+      commanderModalTitle.textContent = "Confirm commander";
+    }
+  }
+  commanderConfirmAnalyzeButton.disabled =
+    appState.isAnalyzing || appState.isParsing || appState.selectedCommanders.length === 0;
+  commanderConfirmAnalyzeButton.textContent = appState.isAnalyzing ? "Analyzing mana..." : "Analyze Deck";
+  commanderConfirmBackButton.disabled = appState.isAnalyzing || appState.isParsing;
   commanderNote.textContent =
     appState.selectedCommanders.length === 2
       ? "Two commanders selected; legality is not validated yet."
-      : "Choose one commander, or add a second for partner-style decks.";
+      : "Choose one commander, or add a second for partner-style decks. Analyze Deck uses this selection.";
   commanderSelects.forEach((select) => {
-    select.disabled = !showManualCommanderPicker;
+    select.disabled = !hasParsedDeck || appState.isAnalyzing || appState.isParsing;
   });
+
+  resultsPanel?.classList.toggle("results-pending", appState.isAnalyzing);
+  resultsPanel?.classList.toggle("results-enter", hasAnalysis && !appState.isAnalyzing);
 
   renderDeckTagReview(appState.parsed);
 }
@@ -1812,25 +1917,59 @@ function formatAverageTurn(value) {
   return value === null ? "--" : `T${value.toFixed(1)}`;
 }
 
+function formatFailureBreakdown(failureBreakdown, iterations) {
+  return [
+    `Insufficient mana ${percent(failureBreakdown.insufficient_mana, iterations)}`,
+    `Missing colors ${percent(failureBreakdown.missing_colors, iterations)}`,
+    `Both ${percent(failureBreakdown.both, iterations)}`,
+    `Not castable by T8 ${percent(failureBreakdown.not_castable_by_turn_8, iterations)}`,
+  ].join(" | ");
+}
+
 function renderCommanderCastMetrics(container, commanderCastResult) {
   if (!commanderCastResult || !commanderCastResult.iterations) {
     return;
   }
 
+  const metricsWrap = createElement("div", "mini-metric-grid commander-metric-grid");
+  const failureWrap = createElement("div", "commander-failure-wrap");
+
   commanderCastResult.commanders.forEach((commander) => {
     const isByT8 = commander.requirements.total > 8;
     const label = isByT8 ? `${commander.name} by T8` : `${commander.name} on curve`;
-    renderMiniMetric(container, label, percent(commander.castableByTarget, commanderCastResult.iterations));
-    renderMiniMetric(container, `${commander.name} avg turn`, formatAverageTurn(commander.averageCastableTurn));
+    renderMiniMetric(metricsWrap, label, percent(commander.commanderCastableOnCurve, commanderCastResult.iterations));
+    renderMiniMetric(
+      metricsWrap,
+      `${commander.name} avg turn`,
+      formatAverageTurn(commander.averageEarliestCommanderCastTurn ?? commander.averageCastableTurn),
+    );
+    failureWrap.append(
+      createElement(
+        "p",
+        "muted-value commander-failure-line",
+        `${commander.name} failures: ${formatFailureBreakdown(commander.failureBreakdown, commanderCastResult.iterations)}`,
+      ),
+    );
   });
 
   if (commanderCastResult.commanders.length === 2) {
     renderMiniMetric(
-      container,
+      metricsWrap,
       "Both commanders by T8",
       percent(commanderCastResult.bothBy8, commanderCastResult.iterations),
     );
   }
+
+  const sectionBody = createElement("div", "commander-analysis-body");
+  sectionBody.append(metricsWrap);
+  sectionBody.append(failureWrap);
+  const commanderSection = Section({
+    className: "commander-analysis-section",
+    title: "Commander Timing",
+    summary: "Castability by turn 8",
+    body: sectionBody,
+  });
+  container.append(commanderSection);
 }
 
 function renderColorCurveAnalysis(
@@ -1867,7 +2006,7 @@ function renderColorCurveAnalysis(
       curveResult,
       commanderCastResult,
     });
-  summary.textContent = `${colorResult.iterations.toLocaleString()} hands, X costs use fixed heuristic`;
+  summary.textContent = "Color and curve from current analysis";
   if (relevantColors.length > 0) {
     renderMiniMetric(
       cards,
@@ -1907,7 +2046,7 @@ function renderColorCurveAnalysis(
     "Turn 4 Play",
     percent(featureSet.castabilityByTurn[3]?.onCurveSpellByTurnCost || 0, curveResult.iterations),
   );
-  renderCommanderCastMetrics(cards, commanderCastResult);
+  renderCommanderCastMetrics(cards, featureSet.commanderTiming || commanderCastResult);
 
   const table = createElement("table", "curve-table");
   const head = createElement("thead");
@@ -2037,11 +2176,12 @@ function renderEmpty(message = "Load a deck list to begin.") {
   renderLoadState();
 }
 
-function renderUnparsedDeck(message = "Deck loaded. Parse and tag it before simulating.") {
+function renderUnparsedDeck(message = "Deck loaded. Click Analyze Deck to parse and run.") {
   appState.parsed = null;
   appState.libraryCards = [];
   appState.library = [];
   appState.simulationFeatures = null;
+  appState.awaitingCommanderConfirmation = false;
   appState.isDeckPanelCollapsed = false;
   appState.reviewOpen = false;
   appState.reviewShowDetails = false;
@@ -2066,13 +2206,64 @@ function setDeckText(text) {
   renderUnparsedDeck();
 }
 
+function isLikelyCommanderCandidate(card) {
+  if (!card || isOutsideDeckCard(card)) return false;
+  const typeLineText = (card.typeLines || []).join(" | ");
+  return /legendary creature|legendary planeswalker/i.test(typeLineText);
+}
+
+function getDeckRequiredColorIdentityFromNonCommanders(parsed) {
+  const cards = (parsed?.cards || []).filter((card) => !isOutsideDeckCard(card) && card.section !== "commander");
+  return getDeckColors(cards);
+}
+
+function getCandidateColorIdentity(card) {
+  const scryfall = getCardScryfall(card);
+  const identity = Array.isArray(scryfall.color_identity)
+    ? scryfall.color_identity.filter((color) => MANA_COLORS.includes(color))
+    : [];
+  if (identity.length > 0) {
+    return identity;
+  }
+
+  const printedColors = Array.isArray(scryfall.colors)
+    ? scryfall.colors.filter((color) => MANA_COLORS.includes(color))
+    : [];
+  if (printedColors.length > 0) {
+    return printedColors;
+  }
+
+  const requirements = getManaCostRequirements(card);
+  return MANA_COLORS.filter((color) => requirements.colors[color] > 0);
+}
+
 function getCommanderOptions(parsed) {
   const seen = new Set();
-  return (parsed.cards || []).filter((card) => {
+  const all = (parsed.cards || []).filter((card) => {
     if (isOutsideDeckCard(card) || seen.has(card.key)) return false;
     seen.add(card.key);
     return true;
   });
+  const filtered = all.filter(isLikelyCommanderCandidate);
+  const baseCandidates = filtered.length > 0 ? filtered : all;
+  const hasCommanderSection = detectCommandersFromSections(parsed).length > 0;
+
+  if (hasCommanderSection) {
+    return baseCandidates;
+  }
+
+  const requiredColors = getDeckRequiredColorIdentityFromNonCommanders(parsed);
+  if (requiredColors.length === 0) {
+    return baseCandidates;
+  }
+
+  const legalCandidates = baseCandidates.filter((card) => {
+    const candidateIdentity = getCandidateColorIdentity(card);
+    const candidateColorSet = new Set(candidateIdentity);
+    return requiredColors.every((color) => candidateColorSet.has(color));
+  });
+
+  return legalCandidates.length > 0 ? legalCandidates : baseCandidates;
 }
 
 function populateCommanderSelect(parsed) {
@@ -2166,13 +2357,13 @@ function refreshLibraryForCommanders() {
 
 function clearDeck() {
   const deckText = document.querySelector("#deck-text");
-  const fileInput = document.querySelector("#deck-file");
   deckText.value = "";
-  fileInput.value = "";
   appState.parsed = null;
   appState.libraryCards = [];
   appState.library = [];
   appState.simulationFeatures = null;
+  appState.awaitingCommanderConfirmation = false;
+  appState.isAnalyzing = false;
   appState.isDeckPanelCollapsed = false;
   appState.reviewOpen = false;
   appState.reviewShowDetails = false;
@@ -2185,19 +2376,24 @@ function clearDeck() {
 
 function editDeckList() {
   appState.isDeckPanelCollapsed = false;
+  appState.awaitingCommanderConfirmation = false;
   appState.reviewOpen = false;
   appState.reviewShowDetails = false;
   renderLoadState();
+  document.querySelector("#deck-text")?.focus();
 }
 
 async function parseLoadedDeck() {
   const rawText = document.querySelector("#deck-text").value;
+  const previousCommanderKeys = [...appState.selectedCommanderKeys];
 
   if (!rawText.trim()) {
     appState.parsed = null;
     appState.libraryCards = [];
     appState.library = [];
     appState.simulationFeatures = null;
+    appState.awaitingCommanderConfirmation = false;
+    appState.isAnalyzing = false;
     appState.isDeckPanelCollapsed = false;
     appState.reviewOpen = false;
     appState.reviewShowDetails = false;
@@ -2205,8 +2401,8 @@ async function parseLoadedDeck() {
     appState.selectedCommanderKeys = [];
     appState.commanderColorIdentity = [];
     appState.commanderSelectionMode = null;
-    renderEmpty("Load or paste a deck list first.");
-    return;
+    renderEmpty("Paste a deck list first.");
+    return false;
   }
 
   appState.isParsing = true;
@@ -2240,11 +2436,35 @@ async function parseLoadedDeck() {
 
   appState.parsed = parsed;
   appState.simulationFeatures = null;
+  appState.awaitingCommanderConfirmation = false;
+  appState.isAnalyzing = false;
   appState.reviewOpen = false;
   appState.reviewShowDetails = false;
+
+  if (!parsed.cards || parsed.cards.length === 0) {
+    renderDeckMetrics(parsed, null);
+    renderDeckTagReview(parsed);
+    renderLandChart(null);
+    renderManaStats(null);
+    renderColorCurveAnalysis(null, null);
+    renderSampleHands(null);
+    renderNotes(parsed, "Could not parse any deck cards from input.");
+    renderLoadState();
+    return false;
+  }
+
   detectAndApplyCommanders(parsed);
+  if (appState.selectedCommanders.length === 0 && previousCommanderKeys.length > 0) {
+    const previousCommanders = previousCommanderKeys
+      .map((key) => parsed.cards.find((card) => getCommanderKey(card) === key))
+      .filter(Boolean);
+    if (previousCommanders.length > 0) {
+      applyCommanderSelection(previousCommanders, "manual");
+    }
+  }
   populateCommanderSelect(parsed);
-  appState.isDeckPanelCollapsed = appState.library.length > 0;
+  appState.isDeckPanelCollapsed = false;
+  appState.awaitingCommanderConfirmation = true;
 
   renderDeckMetrics(parsed, null);
   renderDeckTagReview(parsed);
@@ -2254,9 +2474,19 @@ async function parseLoadedDeck() {
   renderSampleHands(null);
   renderNotes(
     appState.parsed,
-    appState.library.length > 0 ? `${lookupMessage}. Simulation is ready` : "No library cards found",
+    appState.library.length > 0 ? lookupMessage : "No library cards found",
   );
   renderLoadState();
+  if (appState.selectedCommanders.length === 0) {
+    renderNotes(
+      appState.parsed,
+      "Commander confirmation needed. Select one or two commanders, then click Analyze Deck.",
+    );
+    return false;
+  }
+  renderNotes(appState.parsed, "Commander preselected. Confirm or edit, then click Analyze Deck.");
+  renderLoadState();
+  return false;
 }
 
 function simulateCurrentDeck() {
@@ -2273,7 +2503,7 @@ function simulateCurrentDeck() {
     renderManaStats(null);
     renderColorCurveAnalysis(null, null);
     renderSampleHands(null);
-    renderNotes(currentParsed, "Parse and tag a deck before simulating");
+    renderNotes(currentParsed, "Analyze a deck first.");
     renderLoadState();
     return;
   }
@@ -2303,6 +2533,8 @@ function simulateCurrentDeck() {
     commanderCastResult,
   });
   appState.simulationFeatures = simulationFeatures;
+  appState.awaitingCommanderConfirmation = false;
+  appState.isAnalyzing = false;
   renderDeckMetrics(parsed, result);
   renderDeckTagReview(parsed);
   renderLandChart(result);
@@ -2310,6 +2542,7 @@ function simulateCurrentDeck() {
   renderColorCurveAnalysis(colorResult, curveResult, commanderCastResult, result, simulationFeatures);
   renderSampleHands(result);
   renderNotes(parsed, "Simulation complete");
+  appState.isDeckPanelCollapsed = true;
   renderLoadState();
 }
 
@@ -2318,16 +2551,47 @@ function handleDeckTextInput() {
   renderLoadState();
 
   if (!document.querySelector("#deck-text").value.trim()) {
-    renderNotes(createEmptyParsedDeck(), "Load a deck list to begin");
+    renderNotes(createEmptyParsedDeck(), "Paste a deck list to begin");
     return;
   }
 
   if (appState.parsed) {
-    renderNotes(appState.parsed, "Deck list changed. Re-parse to refresh tags and stats");
+    renderNotes(appState.parsed, "Deck list changed. Analyze Deck to refresh results");
     return;
   }
 
-  renderNotes(createEmptyParsedDeck(), "Deck text loaded. Parse and tag it before simulating");
+  renderNotes(createEmptyParsedDeck(), "Deck text loaded. Click Analyze Deck");
+}
+
+async function analyzeDeck() {
+  await parseLoadedDeck();
+}
+
+function confirmCommanderAndAnalyze() {
+  if (!appState.parsed || !appState.awaitingCommanderConfirmation) {
+    return;
+  }
+  if (appState.selectedCommanders.length === 0) {
+    renderNotes(appState.parsed, "Select one or two commanders before analysis.");
+    return;
+  }
+  appState.isAnalyzing = true;
+  renderLoadState();
+  setTimeout(() => {
+    simulateCurrentDeck();
+  }, 0);
+}
+
+function closeCommanderConfirmation() {
+  if (!appState.parsed) {
+    return;
+  }
+  if (appState.isAnalyzing || appState.isParsing) {
+    return;
+  }
+  appState.awaitingCommanderConfirmation = false;
+  renderNotes(appState.parsed, "Commander confirmation paused. Click Continue to reopen.");
+  renderLoadState();
 }
 
 function toggleDeckReviewOpen() {
@@ -2351,7 +2615,7 @@ function toggleDeckReviewDetails() {
 
 function handleCommanderSelectChange(event) {
   if (!appState.parsed) return;
-  const selectRoot = event.currentTarget.closest("#commander-picker, #commander-setup");
+  const selectRoot = event.currentTarget.closest("#commander-setup");
   const selectedKeys = [...selectRoot.querySelectorAll(".commander-select")]
     .map((select) => select.value)
     .filter(Boolean);
@@ -2365,6 +2629,7 @@ function handleCommanderSelectChange(event) {
     appState.selectedCommanderKeys = [];
     appState.commanderColorIdentity = [];
     appState.simulationFeatures = null;
+    appState.awaitingCommanderConfirmation = true;
     refreshLibraryForCommanders();
     populateCommanderSelect(appState.parsed);
     renderDeckMetrics(appState.parsed, null);
@@ -2378,6 +2643,7 @@ function handleCommanderSelectChange(event) {
 
   applyCommanderSelection(commanders, "manual");
   appState.simulationFeatures = null;
+  appState.awaitingCommanderConfirmation = true;
   populateCommanderSelect(appState.parsed);
   renderDeckMetrics(appState.parsed, null);
   renderLandChart(null);
@@ -2389,42 +2655,33 @@ function handleCommanderSelectChange(event) {
 
 function initApp() {
   const deckText = document.querySelector("#deck-text");
-  const fileInput = document.querySelector("#deck-file");
   const sampleButton = document.querySelector("#sample-button");
   const clearButton = document.querySelector("#clear-button");
-  const clearLoadedButton = document.querySelector("#clear-loaded-button");
-  const editListButton = document.querySelector("#edit-list-button");
-  const parseButton = document.querySelector("#parse-button");
-  const simulateButton = document.querySelector("#simulate-button");
+  const clearStartOverButton = document.querySelector("#clear-start-over-button");
+  const editInputButton = document.querySelector("#edit-input-button");
+  const analyzeButton = document.querySelector("#analyze-button");
+  const commanderConfirmAnalyzeButton = document.querySelector("#commander-confirm-analyze");
+  const commanderConfirmBackButton = document.querySelector("#commander-confirm-back");
   const toggleReviewButton = document.querySelector("#toggle-review-button");
   const toggleReviewDetailsButton = document.querySelector("#toggle-review-details-button");
   const commanderSelects = document.querySelectorAll(".commander-select");
 
-  fileInput.addEventListener("change", async (event) => {
-    const file = event.target.files?.[0];
-    if (!file) {
-      return;
-    }
-    setDeckText(await file.text());
-  });
-
-  sampleButton.addEventListener("click", () => {
-    fileInput.value = "";
+  sampleButton?.addEventListener("click", () => {
     setDeckText(SAMPLE_DECK);
   });
 
-  clearButton.addEventListener("click", clearDeck);
-  clearLoadedButton.addEventListener("click", clearDeck);
-  editListButton.addEventListener("click", editDeckList);
-
-  parseButton.addEventListener("click", parseLoadedDeck);
-  simulateButton.addEventListener("click", simulateCurrentDeck);
-  toggleReviewButton.addEventListener("click", toggleDeckReviewOpen);
-  toggleReviewDetailsButton.addEventListener("click", toggleDeckReviewDetails);
+  clearButton?.addEventListener("click", clearDeck);
+  clearStartOverButton?.addEventListener("click", clearDeck);
+  editInputButton?.addEventListener("click", editDeckList);
+  analyzeButton?.addEventListener("click", analyzeDeck);
+  commanderConfirmAnalyzeButton?.addEventListener("click", confirmCommanderAndAnalyze);
+  commanderConfirmBackButton?.addEventListener("click", closeCommanderConfirmation);
+  toggleReviewButton?.addEventListener("click", toggleDeckReviewOpen);
+  toggleReviewDetailsButton?.addEventListener("click", toggleDeckReviewDetails);
   commanderSelects.forEach((select) => {
     select.addEventListener("change", handleCommanderSelectChange);
   });
-  deckText.addEventListener("input", handleDeckTextInput);
+  deckText?.addEventListener("input", handleDeckTextInput);
 
   renderEmpty();
 }
@@ -2449,6 +2706,7 @@ if (typeof module !== "undefined") {
     hasOtag,
     parseDeck,
     drawHand,
+    getCommanderOptions,
     Section,
     StatCard,
     Toolbar,

@@ -317,7 +317,17 @@ const redCommanderRun = simulateCommanderCastAccess(redLibrary, [redCommander], 
 assert.equal(redCommanderRun.commanders.length, 1);
 assert.equal(redCommanderRun.commanders[0].targetTurn, 4);
 assert.equal(redCommanderRun.commanders[0].castableByTarget, 5);
+assert.equal(redCommanderRun.commanders[0].commanderCastableOnCurve, 5);
 assert.equal(redCommanderRun.commanders[0].averageCastableTurn, 4);
+assert.equal(redCommanderRun.commanders[0].averageEarliestCommanderCastTurn, 4);
+assert.equal(redCommanderRun.commanders[0].earliestCommanderCastTurn, 4);
+assert.deepEqual(redCommanderRun.commanders[0].failureBreakdown, {
+  insufficient_mana: 0,
+  missing_colors: 0,
+  both: 0,
+  not_castable_by_turn_8: 0,
+});
+assert.deepEqual(redCommanderRun.commanders[0].failureReason, redCommanderRun.commanders[0].failureBreakdown);
 
 const partnerLibraryForCast = buildLibrary([cardWithCount(rgDual, 99)]);
 const partnerCommanderRun = simulateCommanderCastAccess(
@@ -332,6 +342,8 @@ assert.equal(partnerCommanderRun.bothBy8, 5);
 const blackCommanderRun = simulateCommanderCastAccess(redLibrary, [blackCommander], 5, ["B"]);
 assert.equal(blackCommanderRun.commanders[0].castableBy8, 0);
 assert.equal(blackCommanderRun.commanders[0].averageCastableTurn, null);
+assert.equal(blackCommanderRun.commanders[0].commanderCastableOnCurve, 0);
+assert.equal(blackCommanderRun.commanders[0].failureBreakdown.not_castable_by_turn_8, 5);
 
 const bigCommanderRun = simulateCommanderCastAccess(buildLibrary([cardWithCount(forest, 99)]), [bigCommander], 5, ["G"]);
 assert.equal(bigCommanderRun.commanders[0].targetTurn, 8);

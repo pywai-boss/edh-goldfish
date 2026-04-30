@@ -8,6 +8,7 @@ Describe the current turn-by-turn simulation model and how game-state estimates 
 - Core functions are exported from `app.js` and can be validated with fixture-based unit tests.
 - Test execution command:
   - `npm test`
+- The paste-first UX flow ("Paste decklist -> Confirm commander(s) -> Analyze Deck -> Results") is wired without changing simulation/model outputs.
 - Current automated test scope focuses on:
   - timeline shape stability (turns 1-8)
   - canonical feature output fields
@@ -105,6 +106,16 @@ Legacy fields are still returned for compatibility while UI migration remains in
 ## Commander Timing Data
 - Commander castability output is carried as `SimulationFeatures.commanderTiming` when a commander simulation is run.
 - If commander castability is not run, `commanderTiming` is `null`.
+- Commander timing evaluation scans turns 1-8 and tracks, per simulation:
+  - earliest commander cast turn
+  - commander castable on curve status
+  - failure reason when curve is missed
+- Failure reason categories:
+  - `insufficient_mana`
+  - `missing_colors`
+  - `both`
+  - `not_castable_by_turn_8`
+- The model uses the existing turn-state helpers and canonical feature concepts (mana-by-turn + color access checks) without changing the current mana/color timeline behavior.
 
 ## Reporting Heuristics vs Core Features
 - Heuristic hand labels (for example 2-4 lands, low-land, high-land) remain available as reporting metrics.

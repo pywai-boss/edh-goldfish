@@ -10,3 +10,6 @@
 - Added simulation model audit report in docs/MODEL_AUDIT.md with V1 architecture readiness findings and refactor plan
 - Added canonical SimulationFeatures-style output shape with legacy compatibility aliases and updated docs for metric naming cleanup
 - Added Node CLI simulation test setup with fixture-based tests and npm test script
+- Added commander-on-curve timing metrics with earliest cast turn tracking and failure reason breakdown
+- Refactored UX to paste-first Analyze Deck flow with commander confirmation before simulation and vertical input-to-results layout
+- Collapsed deck input and commander controls after successful analysis with compact summary toolbar and edit/clear actions

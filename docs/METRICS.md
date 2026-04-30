@@ -52,6 +52,12 @@ Define all reported metrics and how each one is calculated.
 - Per selected commander:
   - Castable on curve (or by turn 8 for high MV)
   - Average earliest castable turn
+  - Earliest commander cast turn (aggregated average)
+  - Failure breakdown when curve is missed:
+    - insufficient mana
+    - missing colors
+    - both
+    - not castable by turn 8
 - Two-commander case:
   - Both castable by turn 8 %
 
@@ -67,6 +73,11 @@ Canonical `SimulationFeatures` shape:
 - `fullCommanderColorAccessByTurn`
 - `castabilityByTurn`
 - `commanderTiming`
+  - Per commander timing fields include:
+    - `commanderCastableOnCurve`
+    - `averageEarliestCommanderCastTurn`
+    - `earliestCommanderCastTurn` (alias of the average earliest timing)
+    - `failureBreakdown` / `failureReason` (failure category counts)
 
 Legacy compatibility fields are still exposed:
 - Mana:
