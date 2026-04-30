@@ -10,6 +10,32 @@ Define all reported metrics and how each one is calculated.
 - Land count in library
 - Nonland mana/ramp count
 
+## Pre-Analysis Legality Validation
+Before simulation runs (after deck parse and commander confirmation), the app emits a structured legality report:
+
+```json
+{
+  "isLegal": true,
+  "issues": []
+}
+```
+
+Issue shape:
+- `type`: `deck_size` | `color_identity` | `commander_pair` | `banned_card`
+- `severity`: `error` | `warning`
+- `message`: plain-language description
+- `cards` (optional): related card names
+
+Current checks:
+- Deck size equals 100 cards including commander(s)
+- Two-commander pair is partner-style legal
+- Non-commander cards fit combined commander color identity
+- Commander-banned cards when `scryfall.legalities.commander === "banned"`
+
+Behavior:
+- No issues: analysis proceeds immediately
+- Issues found: user can `Edit deck`, `Edit commander`, or `Continue anyway`
+
 ## Opening Hand Metrics
 - Land-count distribution in opening hands
 - Average lands in opener

@@ -63,15 +63,32 @@
                     <span>Commander</span>
                     <select class="commander-select" data-commander-slot="0"></select>
                   </label>
-                  <label class="commander-picker">
+                  <label id="second-commander-picker" class="commander-picker is-hidden">
                     <span>Second commander</span>
                     <select class="commander-select" data-commander-slot="1"></select>
                   </label>
                 </div>
+                <div class="commander-selection-tools">
+                  <button id="toggle-second-commander" class="secondary-button" type="button">Add second commander</button>
+                  <div id="commander-target-toggle" class="commander-target-toggle is-hidden">
+                    <button id="target-primary" class="secondary-button is-active" type="button">Choosing commander</button>
+                    <button id="target-secondary" class="secondary-button" type="button">Choosing second commander</button>
+                  </div>
+                </div>
+                <div id="commander-candidate-preview" class="commander-candidate-preview"></div>
                 <p id="commander-note" class="commander-note"></p>
                 <div class="commander-modal-actions">
                   <button id="commander-confirm-analyze" class="primary-button" type="button">Analyze Deck</button>
                   <button id="commander-confirm-back" class="secondary-button" type="button">Back to decklist</button>
+                </div>
+              </div>
+              <div id="commander-legality-content" class="commander-legality-content is-hidden">
+                <p class="commander-note">We found Commander legality issues. You can edit and recheck, or continue anyway.</p>
+                <ul id="commander-legality-issues" class="commander-legality-issues"></ul>
+                <div class="commander-modal-actions">
+                  <button id="legality-edit-deck" class="secondary-button" type="button">Edit deck</button>
+                  <button id="legality-edit-commander" class="secondary-button" type="button">Edit commander</button>
+                  <button id="legality-continue-anyway" class="primary-button" type="button">Continue anyway</button>
                 </div>
               </div>
             </div>

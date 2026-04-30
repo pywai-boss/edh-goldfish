@@ -471,6 +471,10 @@ h2 {
   display: none;
 }
 
+.is-hidden {
+  display: none !important;
+}
+
 .commander-select-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -496,6 +500,105 @@ h2 {
   color: var(--muted);
   font-size: 0.72rem;
   line-height: 1.4;
+}
+
+.commander-candidate-preview {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(156px, 1fr));
+  gap: 12px;
+}
+
+.commander-candidate-card {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #11161f;
+  cursor: pointer;
+}
+
+.commander-candidate-card.selected-primary {
+  border-color: var(--amber);
+  box-shadow: 0 0 0 1px rgba(212, 168, 82, 0.35) inset;
+}
+
+.commander-candidate-card.selected-secondary {
+  border-color: #6f87b1;
+  box-shadow: 0 0 0 1px rgba(111, 135, 177, 0.35) inset;
+}
+
+.commander-candidate-card img,
+.commander-candidate-fallback {
+  width: 100%;
+  aspect-ratio: 0.71;
+  border-radius: 6px;
+  border: 1px solid #2f3946;
+}
+
+.commander-candidate-fallback {
+  display: grid;
+  place-items: center;
+  padding: 8px;
+  color: var(--muted);
+  font-size: 0.66rem;
+  text-align: center;
+}
+
+.commander-candidate-name {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #d7dde8;
+  line-height: 1.3;
+  padding-right: 2px;
+}
+
+.commander-candidate-badge {
+  display: inline-block;
+  justify-self: start;
+  font-size: 0.62rem;
+  font-weight: 800;
+  color: #12171f;
+  background: var(--amber);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+.commander-candidate-badge.secondary {
+  background: #7e97c4;
+}
+
+.commander-candidate-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.commander-candidate-actions .secondary-button {
+  min-height: 30px;
+  font-size: 0.68rem;
+  padding: 0 8px;
+}
+
+.commander-selection-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.commander-target-toggle {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.commander-target-toggle .secondary-button {
+  min-height: 30px;
+  font-size: 0.68rem;
+}
+
+.commander-target-toggle .secondary-button.is-active {
+  border-color: var(--amber);
+  color: #f2d9a2;
 }
 
 .commander-modal-actions {
@@ -539,6 +642,29 @@ h2 {
 .loading-state.is-hidden,
 .commander-confirmation-content.is-hidden {
   display: none;
+}
+
+.commander-legality-content {
+  display: grid;
+  gap: 10px;
+}
+
+.commander-legality-content.is-hidden {
+  display: none;
+}
+
+.commander-legality-issues {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0 0 0 18px;
+  color: #d7dde8;
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
+.commander-legality-issues li {
+  margin: 0;
 }
 
 .loaded-deck-toolbar-actions {

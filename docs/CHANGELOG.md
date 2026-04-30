@@ -13,3 +13,5 @@
 - Added commander-on-curve timing metrics with earliest cast turn tracking and failure reason breakdown
 - Refactored UX to paste-first Analyze Deck flow with commander confirmation before simulation and vertical input-to-results layout
 - Collapsed deck input and commander controls after successful analysis with compact summary toolbar and edit/clear actions
+- Added partner-aware commander candidate filtering and preselection using combined color identity coverage for legal partner-style pairs
+- Added pre-analysis Commander legality validation (deck size, color identity fit, partner-pair legality, banned-card flags) with edit/continue-anyway UX

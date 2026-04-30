@@ -1615,17 +1615,150 @@ const appState = {
   libraryCards: [],
   library: [],
   simulationFeatures: null,
+  commanderImageCache: new Map(),
+  commanderImageFetchInFlight: false,
   awaitingCommanderConfirmation: false,
   isDeckPanelCollapsed: false,
   isParsing: false,
   isAnalyzing: false,
+  secondCommanderEnabled: false,
+  commanderSelectionTarget: "primary",
   reviewOpen: false,
   reviewShowDetails: false,
   selectedCommanders: [],
   selectedCommanderKeys: [],
   commanderColorIdentity: [],
   commanderSelectionMode: null,
+  awaitingLegalityConfirmation: false,
+  legalityReport: null,
 };
+
+function resetLegalityState() {
+  appState.awaitingLegalityConfirmation = false;
+  appState.legalityReport = null;
+}
+
+function getCommanderPreviewImageUrl(cardOrScryfall) {
+  const source = cardOrScryfall?.scryfall ? cardOrScryfall.scryfall : cardOrScryfall || {};
+  if (source.image_uris?.small) return source.image_uris.small;
+  if (source.image_uris?.normal) return source.image_uris.normal;
+  if (Array.isArray(source.card_faces)) {
+    for (const face of source.card_faces) {
+      if (face?.image_uris?.small) return face.image_uris.small;
+      if (face?.image_uris?.normal) return face.image_uris.normal;
+    }
+  }
+  return null;
+}
+
+async function ensureCommanderCandidateImages(candidates) {
+  if (appState.commanderImageFetchInFlight || !Array.isArray(candidates) || candidates.length === 0) {
+    return;
+  }
+  const missing = candidates.filter((card) => {
+    if (!card?.key) return false;
+    if (appState.commanderImageCache.has(card.key)) return false;
+    const direct = getCommanderPreviewImageUrl(card);
+    if (direct) {
+      appState.commanderImageCache.set(card.key, direct);
+      return false;
+    }
+    return true;
+  });
+
+  if (missing.length === 0) return;
+  appState.commanderImageFetchInFlight = true;
+  try {
+    const lookup = await fetchScryfallCardsByName(missing);
+    missing.forEach((card) => {
+      const resolved =
+        lookup.cardsByName.get(normalizeKey(card.name)) ||
+        lookup.cardsByName.get(normalizeKey(card.name.split("//")[0])) ||
+        null;
+      const imageUrl = getCommanderPreviewImageUrl(resolved);
+      appState.commanderImageCache.set(card.key, imageUrl);
+    });
+  } catch (error) {
+    missing.forEach((card) => {
+      if (!appState.commanderImageCache.has(card.key)) {
+        appState.commanderImageCache.set(card.key, null);
+      }
+    });
+  } finally {
+    appState.commanderImageFetchInFlight = false;
+    renderCommanderCandidatePreview();
+  }
+}
+
+function renderCommanderCandidatePreview() {
+  const container = document.querySelector("#commander-candidate-preview");
+  if (!container || !appState.parsed || !appState.awaitingCommanderConfirmation) return;
+  const options = getCommanderOptions(appState.parsed);
+  container.replaceChildren();
+  const primaryKey = appState.selectedCommanderKeys[0] || null;
+  const secondaryKey = appState.selectedCommanderKeys[1] || null;
+
+  function applyCommanderChoice(slot, cardKey) {
+    if (!cardKey) return;
+    const nextKeys = [...appState.selectedCommanderKeys];
+    const otherSlot = slot === 0 ? 1 : 0;
+    if (nextKeys[otherSlot] === cardKey) {
+      return;
+    }
+    nextKeys[slot] = cardKey;
+    const uniqueKeys = [...new Set(nextKeys.filter(Boolean))].slice(0, 2);
+    const orderedKeys = [nextKeys[0], nextKeys[1]].filter((key) => uniqueKeys.includes(key));
+    const commanders = orderedKeys
+      .map((key) => appState.parsed.cards.find((entry) => getCommanderKey(entry) === key))
+      .filter(Boolean);
+    if (commanders.length === 2 && !canCardsFormLegalPartnerPair(commanders[0], commanders[1])) {
+      renderNotes(appState.parsed, "Selected pair is not a legal partner-style commander combination.");
+      return;
+    }
+    if (commanders.length > 0) {
+      applyCommanderSelection(commanders, "manual");
+      populateCommanderSelect(appState.parsed);
+      renderLoadState();
+    }
+  }
+
+  options.slice(0, 12).forEach((card) => {
+    const isPrimary = primaryKey === card.key;
+    const isSecondary = secondaryKey === card.key;
+    const cardClass = `commander-candidate-card${isPrimary ? " selected-primary" : ""}${isSecondary ? " selected-secondary" : ""}`;
+    const item = createElement("article", cardClass);
+    const directImage = getCommanderPreviewImageUrl(card);
+    const cachedImage = appState.commanderImageCache.get(card.key);
+    const imageUrl = directImage || cachedImage || null;
+    if (imageUrl) {
+      const image = createElement("img");
+      image.src = imageUrl;
+      image.alt = card.name;
+      image.loading = "lazy";
+      image.referrerPolicy = "no-referrer";
+      item.append(image);
+    } else {
+      item.append(createElement("div", "commander-candidate-fallback", "Preview unavailable"));
+    }
+    if (isPrimary) {
+      item.append(createElement("span", "commander-candidate-badge", "Commander"));
+    }
+    if (isSecondary) {
+      item.append(createElement("span", "commander-candidate-badge secondary", "Second commander"));
+    }
+    item.append(createElement("div", "commander-candidate-name", card.name));
+    item.addEventListener("click", () => {
+      const targetSlot = appState.secondCommanderEnabled && appState.commanderSelectionTarget === "secondary" ? 1 : 0;
+      if (targetSlot === 1 && !primaryKey) {
+        return;
+      }
+      applyCommanderChoice(targetSlot, card.key);
+    });
+    container.append(item);
+  });
+
+  ensureCommanderCandidateImages(options.slice(0, 12));
+}
 
 function createEmptyParsedDeck() {
   return {
@@ -1658,7 +1791,7 @@ function renderNotes(parsed, leadingMessage = "") {
   }
 
   if (totals.commanders === 2) {
-    messages.push("Two commanders selected; legality is not validated yet.");
+    messages.push("Two commanders selected");
   }
 
   if (totals.library > 0 && ![98, 99].includes(totals.library)) {
@@ -1666,6 +1799,21 @@ function renderNotes(parsed, leadingMessage = "") {
   }
 
   notes.textContent = messages.join(". ");
+}
+
+function renderLegalityIssuesList(report) {
+  const legalityIssues = document.querySelector("#commander-legality-issues");
+  if (!legalityIssues) return;
+  legalityIssues.replaceChildren();
+  const issues = Array.isArray(report?.issues) ? report.issues : [];
+  if (issues.length === 0) {
+    legalityIssues.append(createElement("li", "", "No issues found."));
+    return;
+  }
+  issues.forEach((issue) => {
+    const label = issue.severity === "warning" ? "Warning" : "Issue";
+    legalityIssues.append(createElement("li", "", `${label}: ${issue.message}`));
+  });
 }
 
 function renderLoadState() {
@@ -1681,24 +1829,36 @@ function renderLoadState() {
   const commanderLoadingState = document.querySelector("#commander-loading-state");
   const commanderLoadingText = document.querySelector("#commander-loading-text");
   const commanderConfirmationContent = document.querySelector("#commander-confirmation-content");
+  const commanderLegalityContent = document.querySelector("#commander-legality-content");
+  const legalityEditDeckButton = document.querySelector("#legality-edit-deck");
+  const legalityEditCommanderButton = document.querySelector("#legality-edit-commander");
+  const legalityContinueButton = document.querySelector("#legality-continue-anyway");
   const commanderConfirmAnalyzeButton = document.querySelector("#commander-confirm-analyze");
   const commanderConfirmBackButton = document.querySelector("#commander-confirm-back");
+  const secondCommanderPicker = document.querySelector("#second-commander-picker");
+  const toggleSecondCommanderButton = document.querySelector("#toggle-second-commander");
+  const commanderTargetToggle = document.querySelector("#commander-target-toggle");
+  const targetPrimaryButton = document.querySelector("#target-primary");
+  const targetSecondaryButton = document.querySelector("#target-secondary");
   const commanderNote = document.querySelector("#commander-note");
   const commanderSelects = document.querySelectorAll(".commander-select");
+  const commanderCandidatePreview = document.querySelector("#commander-candidate-preview");
   const analyzeButton = document.querySelector("#analyze-button");
   const hasDeckText = deckText.value.trim().length > 0;
   const hasParsedDeck = Boolean(appState.parsed && appState.parsed.cards.length > 0);
   const hasAnalysis = Boolean(appState.simulationFeatures);
   const isAwaitingConfirmation = appState.awaitingCommanderConfirmation && hasParsedDeck;
+  const isAwaitingLegality = appState.awaitingLegalityConfirmation && hasParsedDeck;
   const shouldCollapseInput = appState.isDeckPanelCollapsed && hasParsedDeck && hasAnalysis;
   const actionLabel = "Continue";
-  const isCommanderModalOpen = appState.isParsing || isAwaitingConfirmation;
+  const isCommanderModalOpen = appState.isParsing || appState.isAnalyzing || isAwaitingConfirmation || isAwaitingLegality;
 
   workspace.classList.toggle("results-focus", shouldCollapseInput);
   importPanel.classList.toggle("is-hidden", shouldCollapseInput);
   loadedDeckToolbar.classList.toggle("is-hidden", !shouldCollapseInput);
   analyzeButton.disabled =
     appState.isParsing ||
+    isAwaitingLegality ||
     (!hasParsedDeck && !hasDeckText) ||
     (isAwaitingConfirmation && appState.selectedCommanders.length === 0);
   analyzeButton.textContent = appState.isParsing ? `${actionLabel}...` : actionLabel;
@@ -1707,7 +1867,7 @@ function renderLoadState() {
     const parsed = appState.parsed;
     const commanderLabel = appState.selectedCommanders.length === 2 ? "Commanders" : "Commander";
     const partnerNote =
-      appState.selectedCommanders.length === 2 ? " · Two commanders selected; legality is not validated yet." : "";
+      appState.selectedCommanders.length === 2 ? " · Two commanders selected" : "";
     loadedDeckStatus.replaceChildren();
     loadedDeckStatus.append(document.createTextNode(`Loaded Deck: ${parsed.totals.total} cards total · ${parsed.totals.library}-card library · `));
 
@@ -1728,7 +1888,14 @@ function renderLoadState() {
   modalBackdrop?.classList.toggle("is-hidden", !isCommanderModalOpen || shouldCollapseInput);
   modalBackdrop?.setAttribute("aria-hidden", isCommanderModalOpen && !shouldCollapseInput ? "false" : "true");
   commanderLoadingState?.classList.toggle("is-hidden", !appState.isParsing && !appState.isAnalyzing);
-  commanderConfirmationContent?.classList.toggle("is-hidden", appState.isParsing || appState.isAnalyzing);
+  commanderConfirmationContent?.classList.toggle(
+    "is-hidden",
+    appState.isParsing || appState.isAnalyzing || isAwaitingLegality,
+  );
+  commanderLegalityContent?.classList.toggle(
+    "is-hidden",
+    !isAwaitingLegality || appState.isParsing || appState.isAnalyzing,
+  );
   commanderLoadingText.textContent = appState.isAnalyzing
     ? "Checking mana, colors, and commander timing..."
     : "Reading cards and finding commander options...";
@@ -1737,21 +1904,47 @@ function renderLoadState() {
       commanderModalTitle.textContent = "Preparing deck";
     } else if (appState.isAnalyzing) {
       commanderModalTitle.textContent = "Running analysis";
+    } else if (isAwaitingLegality) {
+      commanderModalTitle.textContent = "Deck legality check";
     } else {
       commanderModalTitle.textContent = "Confirm commander";
     }
   }
   commanderConfirmAnalyzeButton.disabled =
-    appState.isAnalyzing || appState.isParsing || appState.selectedCommanders.length === 0;
+    appState.isAnalyzing || appState.isParsing || isAwaitingLegality || appState.selectedCommanders.length === 0;
   commanderConfirmAnalyzeButton.textContent = appState.isAnalyzing ? "Analyzing mana..." : "Analyze Deck";
-  commanderConfirmBackButton.disabled = appState.isAnalyzing || appState.isParsing;
+  commanderConfirmBackButton.disabled = appState.isAnalyzing || appState.isParsing || isAwaitingLegality;
+  legalityEditDeckButton && (legalityEditDeckButton.disabled = appState.isAnalyzing || appState.isParsing);
+  legalityEditCommanderButton &&
+    (legalityEditCommanderButton.disabled = appState.isAnalyzing || appState.isParsing);
+  legalityContinueButton && (legalityContinueButton.disabled = appState.isAnalyzing || appState.isParsing);
   commanderNote.textContent =
     appState.selectedCommanders.length === 2
-      ? "Two commanders selected; legality is not validated yet."
+      ? "Two commanders selected. Analyze Deck checks commander legality before simulation."
       : "Choose one commander, or add a second for partner-style decks. Analyze Deck uses this selection.";
   commanderSelects.forEach((select) => {
     select.disabled = !hasParsedDeck || appState.isAnalyzing || appState.isParsing;
   });
+  secondCommanderPicker?.classList.toggle("is-hidden", !appState.secondCommanderEnabled);
+  toggleSecondCommanderButton.textContent = appState.secondCommanderEnabled
+    ? "Remove second commander"
+    : "Add second commander";
+  toggleSecondCommanderButton.disabled = appState.isAnalyzing || appState.isParsing || !hasParsedDeck;
+  commanderTargetToggle?.classList.toggle("is-hidden", !appState.secondCommanderEnabled);
+  targetPrimaryButton?.classList.toggle("is-active", appState.commanderSelectionTarget !== "secondary");
+  targetSecondaryButton?.classList.toggle("is-active", appState.commanderSelectionTarget === "secondary");
+  targetPrimaryButton.disabled = appState.isAnalyzing || appState.isParsing;
+  targetSecondaryButton.disabled = appState.isAnalyzing || appState.isParsing;
+
+  if (isAwaitingLegality) {
+    renderLegalityIssuesList(appState.legalityReport);
+  }
+
+  if (isAwaitingConfirmation && !appState.isParsing && !appState.isAnalyzing && !isAwaitingLegality) {
+    renderCommanderCandidatePreview();
+  } else if (commanderCandidatePreview) {
+    commanderCandidatePreview.replaceChildren();
+  }
 
   resultsPanel?.classList.toggle("results-pending", appState.isAnalyzing);
   resultsPanel?.classList.toggle("results-enter", hasAnalysis && !appState.isAnalyzing);
@@ -2165,6 +2358,7 @@ function renderSampleHands(result) {
 }
 
 function renderEmpty(message = "Load a deck list to begin.") {
+  resetLegalityState();
   const parsed = createEmptyParsedDeck();
   renderDeckMetrics(appState.parsed, null);
   renderDeckTagReview(appState.parsed);
@@ -2182,11 +2376,14 @@ function renderUnparsedDeck(message = "Deck loaded. Click Analyze Deck to parse 
   appState.library = [];
   appState.simulationFeatures = null;
   appState.awaitingCommanderConfirmation = false;
+  resetLegalityState();
   appState.isDeckPanelCollapsed = false;
   appState.reviewOpen = false;
   appState.reviewShowDetails = false;
   appState.selectedCommanders = [];
   appState.selectedCommanderKeys = [];
+  appState.secondCommanderEnabled = false;
+  appState.commanderSelectionTarget = "primary";
   appState.commanderColorIdentity = [];
   appState.commanderSelectionMode = null;
   const parsed = createEmptyParsedDeck();
@@ -2208,13 +2405,91 @@ function setDeckText(text) {
 
 function isLikelyCommanderCandidate(card) {
   if (!card || isOutsideDeckCard(card)) return false;
-  const typeLineText = (card.typeLines || []).join(" | ");
-  return /legendary creature|legendary planeswalker/i.test(typeLineText);
+  const typeLineText = getTypeLineText(card);
+  return (
+    /legendary creature|legendary planeswalker/i.test(typeLineText) ||
+    isBackgroundCommanderCard(card)
+  );
 }
 
 function getDeckRequiredColorIdentityFromNonCommanders(parsed) {
   const cards = (parsed?.cards || []).filter((card) => !isOutsideDeckCard(card) && card.section !== "commander");
   return getDeckColors(cards);
+}
+
+function getTypeLineText(card) {
+  const typeLines = Array.isArray(card?.typeLines) ? card.typeLines : [];
+  if (typeLines.length > 0) {
+    return typeLines.join(" | ");
+  }
+  return (getCardScryfall(card).type_line || "").toString();
+}
+
+function getOracleTextLower(card) {
+  return getOracleText(card).toLowerCase();
+}
+
+function isBackgroundCommanderCard(card) {
+  return /\blegendary enchantment\b/i.test(getTypeLineText(card)) && /\bbackground\b/i.test(getTypeLineText(card));
+}
+
+function isDoctorCommanderCard(card) {
+  const typeLineText = getTypeLineText(card);
+  return /\blegendary creature\b/i.test(typeLineText) && /\bdoctor\b/i.test(typeLineText);
+}
+
+function getPartnerWithTargetKey(card) {
+  const oracleText = getOracleTextLower(card);
+  const match = oracleText.match(/\bpartner with\s+([^(.]+)/i);
+  if (!match || !match[1]) return null;
+  return normalizeKey(match[1].trim());
+}
+
+function getCommanderPartnerProfile(card) {
+  const scryfall = getCardScryfall(card);
+  const keywords = Array.isArray(scryfall.keywords)
+    ? scryfall.keywords.map((keyword) => keyword.toLowerCase())
+    : [];
+  const oracleText = getOracleTextLower(card);
+
+  const hasPartner =
+    keywords.includes("partner") || (/\bpartner\b/i.test(oracleText) && !/\bpartner with\b/i.test(oracleText));
+  const hasFriendsForever = keywords.includes("friends forever") || /\bfriends forever\b/i.test(oracleText);
+  const hasChooseBackground =
+    keywords.includes("choose a background") || /\bchoose a background\b/i.test(oracleText);
+  const hasDoctorsCompanion =
+    keywords.includes("doctor's companion") ||
+    keywords.includes("doctors companion") ||
+    /\bdoctor(?:'|’)?s companion\b/i.test(oracleText);
+  const partnerWithTargetKey = getPartnerWithTargetKey(card);
+
+  return {
+    hasPartner,
+    hasFriendsForever,
+    hasChooseBackground,
+    hasDoctorsCompanion,
+    partnerWithTargetKey,
+    isBackground: isBackgroundCommanderCard(card),
+    isDoctor: isDoctorCommanderCard(card),
+  };
+}
+
+function canCardsFormLegalPartnerPair(cardA, cardB) {
+  if (!cardA || !cardB) return false;
+  if (getCommanderKey(cardA) === getCommanderKey(cardB)) return false;
+
+  const a = getCommanderPartnerProfile(cardA);
+  const b = getCommanderPartnerProfile(cardB);
+
+  if (a.hasPartner && b.hasPartner) return true;
+  if (a.hasFriendsForever && b.hasFriendsForever) return true;
+  if ((a.hasChooseBackground && b.isBackground) || (b.hasChooseBackground && a.isBackground)) return true;
+  if ((a.hasDoctorsCompanion && b.isDoctor) || (b.hasDoctorsCompanion && a.isDoctor)) return true;
+
+  if (a.partnerWithTargetKey && a.partnerWithTargetKey === getCommanderKey(cardB)) return true;
+  if (b.partnerWithTargetKey && b.partnerWithTargetKey === getCommanderKey(cardA)) return true;
+
+  return false;
 }
 
 function getCandidateColorIdentity(card) {
@@ -2237,7 +2512,15 @@ function getCandidateColorIdentity(card) {
   return MANA_COLORS.filter((color) => requirements.colors[color] > 0);
 }
 
-function getCommanderOptions(parsed) {
+function getCombinedCommanderColorIdentity(cards) {
+  const colors = new Set();
+  cards.forEach((card) => {
+    getCandidateColorIdentity(card).forEach((color) => colors.add(color));
+  });
+  return getRelevantColors([...colors]);
+}
+
+function getCommanderCandidatePool(parsed) {
   const seen = new Set();
   const all = (parsed.cards || []).filter((card) => {
     if (isOutsideDeckCard(card) || seen.has(card.key)) return false;
@@ -2247,23 +2530,184 @@ function getCommanderOptions(parsed) {
   const filtered = all.filter(isLikelyCommanderCandidate);
   const baseCandidates = filtered.length > 0 ? filtered : all;
   const hasCommanderSection = detectCommandersFromSections(parsed).length > 0;
+  const requiredColors = getDeckRequiredColorIdentityFromNonCommanders(parsed);
+  const legalSingles = requiredColors.length === 0
+    ? baseCandidates
+    : baseCandidates.filter((card) => {
+        const candidateColorSet = new Set(getCandidateColorIdentity(card));
+        return requiredColors.every((color) => candidateColorSet.has(color));
+      });
+
+  const legalPartnerPairs = [];
+  if (!hasCommanderSection && requiredColors.length > 0) {
+    for (let i = 0; i < baseCandidates.length; i += 1) {
+      for (let j = i + 1; j < baseCandidates.length; j += 1) {
+        const first = baseCandidates[i];
+        const second = baseCandidates[j];
+        if (!canCardsFormLegalPartnerPair(first, second)) continue;
+        const combined = new Set(getCombinedCommanderColorIdentity([first, second]));
+        if (requiredColors.every((color) => combined.has(color))) {
+          legalPartnerPairs.push([first, second]);
+        }
+      }
+    }
+  }
+
+  return {
+    all,
+    baseCandidates,
+    hasCommanderSection,
+    requiredColors,
+    legalSingles,
+    legalPartnerPairs,
+  };
+}
+
+function getCommanderOptions(parsed) {
+  const {
+    baseCandidates,
+    hasCommanderSection,
+    requiredColors,
+    legalSingles,
+    legalPartnerPairs,
+  } = getCommanderCandidatePool(parsed);
 
   if (hasCommanderSection) {
     return baseCandidates;
   }
 
-  const requiredColors = getDeckRequiredColorIdentityFromNonCommanders(parsed);
   if (requiredColors.length === 0) {
     return baseCandidates;
   }
 
-  const legalCandidates = baseCandidates.filter((card) => {
-    const candidateIdentity = getCandidateColorIdentity(card);
-    const candidateColorSet = new Set(candidateIdentity);
-    return requiredColors.every((color) => candidateColorSet.has(color));
+  const legalCandidates = new Set(legalSingles.map((card) => card.key));
+  legalPartnerPairs.forEach((pair) => {
+    pair.forEach((card) => legalCandidates.add(card.key));
   });
 
-  return legalCandidates.length > 0 ? legalCandidates : baseCandidates;
+  if (legalCandidates.size === 0) {
+    return [];
+  }
+
+  return baseCandidates.filter((card) => legalCandidates.has(card.key));
+}
+
+function dedupeNames(names = []) {
+  const seen = new Set();
+  const ordered = [];
+  names.forEach((name) => {
+    const key = normalizeKey(name || "");
+    if (!name || seen.has(key)) return;
+    seen.add(key);
+    ordered.push(name);
+  });
+  return ordered;
+}
+
+function cardFitsCommanderIdentity(card, commanderColorSet) {
+  const identity = getCandidateColorIdentity(card);
+  if (!Array.isArray(identity) || identity.length === 0) {
+    return true;
+  }
+  return identity.every((color) => commanderColorSet.has(color));
+}
+
+function getCommanderLegalityIssueMessage(type, cards = [], details = "") {
+  if (type === "deck_size") return details;
+  if (type === "commander_pair") return "These two commanders cannot be paired.";
+  if (type === "color_identity") {
+    if (cards.length === 1) return `${cards[0]} is outside your commanders' color identity.`;
+    return `${cards.slice(0, 3).join(", ")}${cards.length > 3 ? ` and ${cards.length - 3} more` : ""} are outside your commanders' color identity.`;
+  }
+  if (type === "banned_card") {
+    if (cards.length === 1) return `${cards[0]} is banned in Commander.`;
+    return `${cards.slice(0, 3).join(", ")}${cards.length > 3 ? ` and ${cards.length - 3} more` : ""} are banned in Commander.`;
+  }
+  return details || "Commander legality issue found.";
+}
+
+function validateCommanderDeckLegality(parsed, commanders = []) {
+  const cards = Array.isArray(parsed?.cards) ? parsed.cards : [];
+  const selectedCommanders = Array.isArray(commanders) ? commanders.filter(Boolean) : [];
+  const commanderKeySet = getCommanderKeySet(selectedCommanders);
+  const totals = parsed?.totals || summarizeDeck(cards, selectedCommanders);
+  const issues = [];
+
+  if (totals.total !== 100) {
+    issues.push({
+      type: "deck_size",
+      severity: "error",
+      message: `Deck has ${totals.total} cards. Commander decks should have exactly 100 including commander(s).`,
+    });
+  }
+
+  if (selectedCommanders.length === 2 && !canCardsFormLegalPartnerPair(selectedCommanders[0], selectedCommanders[1])) {
+    issues.push({
+      type: "commander_pair",
+      severity: "error",
+      message: getCommanderLegalityIssueMessage("commander_pair"),
+      cards: selectedCommanders.map((card) => card.name),
+    });
+  }
+
+  const commanderIdentitySet = new Set(getCommanderColorIdentity(selectedCommanders));
+  const hasCommanderIdentityMetadata = selectedCommanders.every((commander) =>
+    Array.isArray(getCardScryfall(commander)?.color_identity),
+  );
+  const outsideIdentityCards = [];
+  const bannedCards = [];
+
+  cards.forEach((card) => {
+    if (isOutsideDeckCard(card) || isCommandZoneCard(card, commanderKeySet)) return;
+    if (hasCommanderIdentityMetadata && !cardFitsCommanderIdentity(card, commanderIdentitySet)) {
+      outsideIdentityCards.push(card.name);
+    }
+    const commanderLegality = getCardScryfall(card)?.legalities?.commander;
+    if (commanderLegality === "banned") {
+      bannedCards.push(card.name);
+    }
+  });
+
+  const uniqueOutsideIdentityCards = dedupeNames(outsideIdentityCards);
+  if (uniqueOutsideIdentityCards.length > 0) {
+    issues.push({
+      type: "color_identity",
+      severity: "error",
+      message: getCommanderLegalityIssueMessage("color_identity", uniqueOutsideIdentityCards),
+      cards: uniqueOutsideIdentityCards,
+    });
+  }
+
+  const uniqueBannedCards = dedupeNames(bannedCards);
+  if (uniqueBannedCards.length > 0) {
+    issues.push({
+      type: "banned_card",
+      severity: "error",
+      message: getCommanderLegalityIssueMessage("banned_card", uniqueBannedCards),
+      cards: uniqueBannedCards,
+    });
+  }
+
+  return {
+    isLegal: issues.length === 0,
+    issues,
+  };
+}
+
+function setSecondCommanderEnabled(enabled) {
+  appState.secondCommanderEnabled = Boolean(enabled);
+  resetLegalityState();
+  if (!appState.secondCommanderEnabled && appState.selectedCommanderKeys.length > 1) {
+    const primary = appState.selectedCommanderKeys[0];
+    appState.selectedCommanders = primary ? [appState.selectedCommanders[0]] : [];
+    appState.selectedCommanderKeys = primary ? [primary] : [];
+    const commanders = getSelectedCommanderCards(appState.parsed);
+    appState.commanderColorIdentity = getCommanderColorIdentity(commanders);
+    refreshLibraryForCommanders();
+  }
+  if (!appState.secondCommanderEnabled && appState.commanderSelectionTarget === "secondary") {
+    appState.commanderSelectionTarget = "primary";
+  }
 }
 
 function populateCommanderSelect(parsed) {
@@ -2290,8 +2734,12 @@ function populateCommanderSelect(parsed) {
 function applyCommanderSelection(commanders, mode) {
   appState.selectedCommanders = commanders.map((commander) => commander.name);
   appState.selectedCommanderKeys = commanders.map(getCommanderKey);
+  if (commanders.length >= 2) {
+    appState.secondCommanderEnabled = true;
+  }
   appState.commanderColorIdentity = getCommanderColorIdentity(commanders);
   appState.commanderSelectionMode = mode;
+  resetLegalityState();
   refreshLibraryForCommanders();
 }
 
@@ -2299,12 +2747,24 @@ function detectAndApplyCommanders(parsed) {
   const sectionCommanders = detectCommandersFromSections(parsed);
 
   if (sectionCommanders.length === 1 || sectionCommanders.length === 2) {
+    appState.secondCommanderEnabled = sectionCommanders.length === 2;
+    appState.commanderSelectionTarget = "primary";
     applyCommanderSelection(sectionCommanders, "section");
+    return;
+  }
+
+  const { legalSingles, legalPartnerPairs, requiredColors } = getCommanderCandidatePool(parsed);
+  if (requiredColors.length > 0 && legalSingles.length === 0 && legalPartnerPairs.length > 0) {
+    appState.secondCommanderEnabled = true;
+    appState.commanderSelectionTarget = "primary";
+    applyCommanderSelection(legalPartnerPairs[0], "auto-partner");
     return;
   }
 
   appState.selectedCommanders = [];
   appState.selectedCommanderKeys = [];
+  appState.secondCommanderEnabled = false;
+  appState.commanderSelectionTarget = "primary";
   appState.commanderColorIdentity = [];
   appState.commanderSelectionMode = "manual";
   refreshLibraryForCommanders();
@@ -2363,12 +2823,15 @@ function clearDeck() {
   appState.library = [];
   appState.simulationFeatures = null;
   appState.awaitingCommanderConfirmation = false;
+  resetLegalityState();
   appState.isAnalyzing = false;
   appState.isDeckPanelCollapsed = false;
   appState.reviewOpen = false;
   appState.reviewShowDetails = false;
   appState.selectedCommanders = [];
   appState.selectedCommanderKeys = [];
+  appState.secondCommanderEnabled = false;
+  appState.commanderSelectionTarget = "primary";
   appState.commanderColorIdentity = [];
   appState.commanderSelectionMode = null;
   renderEmpty();
@@ -2377,6 +2840,7 @@ function clearDeck() {
 function editDeckList() {
   appState.isDeckPanelCollapsed = false;
   appState.awaitingCommanderConfirmation = false;
+  resetLegalityState();
   appState.reviewOpen = false;
   appState.reviewShowDetails = false;
   renderLoadState();
@@ -2393,12 +2857,15 @@ async function parseLoadedDeck() {
     appState.library = [];
     appState.simulationFeatures = null;
     appState.awaitingCommanderConfirmation = false;
+    resetLegalityState();
     appState.isAnalyzing = false;
     appState.isDeckPanelCollapsed = false;
     appState.reviewOpen = false;
     appState.reviewShowDetails = false;
     appState.selectedCommanders = [];
     appState.selectedCommanderKeys = [];
+    appState.secondCommanderEnabled = false;
+    appState.commanderSelectionTarget = "primary";
     appState.commanderColorIdentity = [];
     appState.commanderSelectionMode = null;
     renderEmpty("Paste a deck list first.");
@@ -2437,6 +2904,7 @@ async function parseLoadedDeck() {
   appState.parsed = parsed;
   appState.simulationFeatures = null;
   appState.awaitingCommanderConfirmation = false;
+  resetLegalityState();
   appState.isAnalyzing = false;
   appState.reviewOpen = false;
   appState.reviewShowDetails = false;
@@ -2465,6 +2933,7 @@ async function parseLoadedDeck() {
   populateCommanderSelect(parsed);
   appState.isDeckPanelCollapsed = false;
   appState.awaitingCommanderConfirmation = true;
+  resetLegalityState();
 
   renderDeckMetrics(parsed, null);
   renderDeckTagReview(parsed);
@@ -2534,6 +3003,7 @@ function simulateCurrentDeck() {
   });
   appState.simulationFeatures = simulationFeatures;
   appState.awaitingCommanderConfirmation = false;
+  resetLegalityState();
   appState.isAnalyzing = false;
   renderDeckMetrics(parsed, result);
   renderDeckTagReview(parsed);
@@ -2567,6 +3037,17 @@ async function analyzeDeck() {
   await parseLoadedDeck();
 }
 
+function runAnalysisAfterConfirmation() {
+  appState.awaitingCommanderConfirmation = false;
+  appState.awaitingLegalityConfirmation = false;
+  appState.legalityReport = null;
+  appState.isAnalyzing = true;
+  renderLoadState();
+  setTimeout(() => {
+    simulateCurrentDeck();
+  }, 0);
+}
+
 function confirmCommanderAndAnalyze() {
   if (!appState.parsed || !appState.awaitingCommanderConfirmation) {
     return;
@@ -2575,11 +3056,44 @@ function confirmCommanderAndAnalyze() {
     renderNotes(appState.parsed, "Select one or two commanders before analysis.");
     return;
   }
-  appState.isAnalyzing = true;
+  const legalityReport = validateCommanderDeckLegality(appState.parsed, getSelectedCommanderCards(appState.parsed));
+  appState.legalityReport = legalityReport;
+  if (!legalityReport.isLegal) {
+    appState.awaitingLegalityConfirmation = true;
+    renderNotes(appState.parsed, "Legality issues found. Review before analysis.");
+    renderLoadState();
+    return;
+  }
+  runAnalysisAfterConfirmation();
+}
+
+function continueAnalysisAnyway() {
+  if (!appState.parsed || !appState.awaitingLegalityConfirmation) {
+    return;
+  }
+  runAnalysisAfterConfirmation();
+}
+
+function editCommanderFromLegalityWarning() {
+  if (!appState.parsed || !appState.awaitingLegalityConfirmation) {
+    return;
+  }
+  resetLegalityState();
+  appState.awaitingCommanderConfirmation = true;
+  renderNotes(appState.parsed, "Update commander selection, then run analysis.");
   renderLoadState();
-  setTimeout(() => {
-    simulateCurrentDeck();
-  }, 0);
+}
+
+function editDeckFromLegalityWarning() {
+  if (!appState.parsed || !appState.awaitingLegalityConfirmation) {
+    return;
+  }
+  resetLegalityState();
+  appState.awaitingCommanderConfirmation = false;
+  renderNotes(appState.parsed, "Update your deck list to resolve legality issues.");
+  appState.isDeckPanelCollapsed = false;
+  renderLoadState();
+  document.querySelector("#deck-text")?.focus();
 }
 
 function closeCommanderConfirmation() {
@@ -2590,7 +3104,26 @@ function closeCommanderConfirmation() {
     return;
   }
   appState.awaitingCommanderConfirmation = false;
+  resetLegalityState();
   renderNotes(appState.parsed, "Commander confirmation paused. Click Continue to reopen.");
+  renderLoadState();
+}
+
+function toggleSecondCommanderMode() {
+  if (!appState.parsed || appState.isAnalyzing || appState.isParsing) {
+    return;
+  }
+  setSecondCommanderEnabled(!appState.secondCommanderEnabled);
+  populateCommanderSelect(appState.parsed);
+  renderLoadState();
+}
+
+function setCommanderSelectionTarget(target) {
+  if (!appState.secondCommanderEnabled) {
+    appState.commanderSelectionTarget = "primary";
+  } else {
+    appState.commanderSelectionTarget = target === "secondary" ? "secondary" : "primary";
+  }
   renderLoadState();
 }
 
@@ -2617,7 +3150,11 @@ function handleCommanderSelectChange(event) {
   if (!appState.parsed) return;
   const selectRoot = event.currentTarget.closest("#commander-setup");
   const selectedKeys = [...selectRoot.querySelectorAll(".commander-select")]
-    .map((select) => select.value)
+    .map((select) => {
+      const slot = Number.parseInt(select.dataset.commanderSlot || "0", 10);
+      if (slot === 1 && !appState.secondCommanderEnabled) return "";
+      return select.value;
+    })
     .filter(Boolean);
   const uniqueKeys = [...new Set(selectedKeys)].slice(0, 2);
   const commanders = uniqueKeys
@@ -2627,9 +3164,12 @@ function handleCommanderSelectChange(event) {
   if (commanders.length === 0) {
     appState.selectedCommanders = [];
     appState.selectedCommanderKeys = [];
+    appState.secondCommanderEnabled = false;
+    appState.commanderSelectionTarget = "primary";
     appState.commanderColorIdentity = [];
     appState.simulationFeatures = null;
     appState.awaitingCommanderConfirmation = true;
+    resetLegalityState();
     refreshLibraryForCommanders();
     populateCommanderSelect(appState.parsed);
     renderDeckMetrics(appState.parsed, null);
@@ -2641,9 +3181,17 @@ function handleCommanderSelectChange(event) {
     return;
   }
 
+  if (commanders.length === 2 && !canCardsFormLegalPartnerPair(commanders[0], commanders[1])) {
+    renderNotes(appState.parsed, "Selected pair is not a legal partner-style commander combination.");
+    populateCommanderSelect(appState.parsed);
+    renderLoadState();
+    return;
+  }
+
   applyCommanderSelection(commanders, "manual");
   appState.simulationFeatures = null;
   appState.awaitingCommanderConfirmation = true;
+  appState.awaitingLegalityConfirmation = false;
   populateCommanderSelect(appState.parsed);
   renderDeckMetrics(appState.parsed, null);
   renderLandChart(null);
@@ -2662,6 +3210,12 @@ function initApp() {
   const analyzeButton = document.querySelector("#analyze-button");
   const commanderConfirmAnalyzeButton = document.querySelector("#commander-confirm-analyze");
   const commanderConfirmBackButton = document.querySelector("#commander-confirm-back");
+  const legalityEditDeckButton = document.querySelector("#legality-edit-deck");
+  const legalityEditCommanderButton = document.querySelector("#legality-edit-commander");
+  const legalityContinueButton = document.querySelector("#legality-continue-anyway");
+  const toggleSecondCommanderButton = document.querySelector("#toggle-second-commander");
+  const targetPrimaryButton = document.querySelector("#target-primary");
+  const targetSecondaryButton = document.querySelector("#target-secondary");
   const toggleReviewButton = document.querySelector("#toggle-review-button");
   const toggleReviewDetailsButton = document.querySelector("#toggle-review-details-button");
   const commanderSelects = document.querySelectorAll(".commander-select");
@@ -2676,6 +3230,12 @@ function initApp() {
   analyzeButton?.addEventListener("click", analyzeDeck);
   commanderConfirmAnalyzeButton?.addEventListener("click", confirmCommanderAndAnalyze);
   commanderConfirmBackButton?.addEventListener("click", closeCommanderConfirmation);
+  legalityEditDeckButton?.addEventListener("click", editDeckFromLegalityWarning);
+  legalityEditCommanderButton?.addEventListener("click", editCommanderFromLegalityWarning);
+  legalityContinueButton?.addEventListener("click", continueAnalysisAnyway);
+  toggleSecondCommanderButton?.addEventListener("click", toggleSecondCommanderMode);
+  targetPrimaryButton?.addEventListener("click", () => setCommanderSelectionTarget("primary"));
+  targetSecondaryButton?.addEventListener("click", () => setCommanderSelectionTarget("secondary"));
   toggleReviewButton?.addEventListener("click", toggleDeckReviewOpen);
   toggleReviewDetailsButton?.addEventListener("click", toggleDeckReviewDetails);
   commanderSelects.forEach((select) => {
@@ -2694,12 +3254,14 @@ if (typeof module !== "undefined") {
   module.exports = {
     buildLibrary,
     buildLibraryCards,
+    canCardsFormLegalPartnerPair,
     canPayManaCost,
     classifyCard,
     createSimulationFeatures,
     detectCommandersFromSections,
     enrichParsedDeck,
     getCommanderColorIdentity,
+    getCommanderPreviewImageUrl,
     getManaCostRequirements,
     getProducedColors,
     getRelevantColors,
@@ -2718,5 +3280,6 @@ if (typeof module !== "undefined") {
     summarizeRoleCounts,
     summarizeDeck,
     summarizeHand,
+    validateCommanderDeckLegality,
   };
 }

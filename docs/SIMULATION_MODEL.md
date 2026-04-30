@@ -37,6 +37,14 @@ Legacy fields are still returned for compatibility while UI migration remains in
   - Evaluate turn states from turn 1 through turn 8.
   - Aggregate mana timeline values for each turn.
 
+## Pre-Simulation Gate
+- After deck parse and commander confirmation, a legality validation step runs before simulation:
+  - deck size check (100 including commander(s))
+  - commander pair legality check for two-commanders
+  - color identity inclusion check for non-commander cards
+  - banned-card check when metadata provides commander legality
+- Validation issues do not hard-block simulation; the user can continue anyway.
+
 ## Hand + Draw Model
 - Opening hand size is fixed by implementation.
 - Draws are random without replacement.
@@ -57,6 +65,14 @@ Legacy fields are still returned for compatibility while UI migration remains in
 - One or two commanders are supported.
 - Commander castability is evaluated from command zone assumptions, not from hand draws.
 - Partner-style selection combines color identity while evaluating each commander cost independently.
+- When no commander section is present, commander suggestions are filtered by deck-required color identity:
+  - legal single commanders that cover required colors
+  - legal two-commander partner-style pairs whose combined identities cover required colors
+- Supported partner-style mechanics in candidate pairing:
+  - `Partner`
+  - `Choose a Background` + `Background`
+  - `Friends forever`
+  - `Doctor's companion` + `Doctor`
 
 ## Castability Logic
 - A spell/card is castable when:
