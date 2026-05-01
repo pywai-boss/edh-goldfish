@@ -15,3 +15,6 @@
 - Collapsed deck input and commander controls after successful analysis with compact summary toolbar and edit/clear actions
 - Added partner-aware commander candidate filtering and preselection using combined color identity coverage for legal partner-style pairs
 - Added pre-analysis Commander legality validation (deck size, color identity fit, partner-pair legality, banned-card flags) with edit/continue-anyway UX
+- Extracted pure card and mana helper logic into `src/domain/cards.js` while preserving existing app behavior
+- Scoped `src/domain/cards.js` browser globals to restore app initialization after helper extraction
+- Added defensive empty-state handling for deck metric rendering after helper extraction

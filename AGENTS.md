@@ -1,5 +1,19 @@
 # Development Rules
 
+## Architecture Rules
+- Keep a clear separation of concerns:
+  - `src/domain/` -> domain and simulation logic (no DOM, no network)
+  - `src/data/` -> external data access (Scryfall and other I/O)
+  - `src/ui/` -> rendering, UI state, and event wiring
+  - `src/app.js` -> orchestration/composition only
+- Simulation, parsing, commander, and legality logic must be implemented as pure functions in `src/domain/`.
+- Domain functions must be deterministic for the same inputs and must not read/write global UI state.
+- Data-access modules may perform network/file I/O, but they must not contain simulation or UI logic.
+- UI modules may read/write UI state and DOM, but they must not implement core simulation/parsing/legality rules.
+- Do not add large new logic blocks to the root `app.js` monolith. New feature logic must be placed in the appropriate `src/` module.
+- Prefer adding or extending reusable module functions over duplicating logic across UI handlers.
+- Preserve behavior during refactors: structural moves should not change output semantics unless explicitly requested.
+
 ## Documentation Sync Policy
 - Documentation must stay in sync with the codebase.
 - Any change to simulation, ramp modeling, parsing, metrics, or output must update documentation.

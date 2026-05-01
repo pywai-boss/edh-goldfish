@@ -1,3 +1,28 @@
+const cardDomain =
+  typeof require !== "undefined"
+    ? require("./src/domain/cards.js")
+    : window.EDHCardDomain;
+
+const {
+  MANA_COLORS,
+  canPayManaCost: domainCanPayManaCost,
+  cleanCardName: domainCleanCardName,
+  entersTapped: domainEntersTapped,
+  getCardScryfall: domainGetCardScryfall,
+  getDeckColors: domainGetDeckColors,
+  getFrontFaceTypeLine: domainGetFrontFaceTypeLine,
+  getManaCostRequirements: domainGetManaCostRequirements,
+  getOracleText: domainGetOracleText,
+  getProducedColors: domainGetProducedColors,
+  getRelevantColors: domainGetRelevantColors,
+  getScryfallTypeLines: domainGetScryfallTypeLines,
+  hasAnyTag: domainHasAnyTag,
+  hasOtag: domainHasOtag,
+  isLandTypeLine: domainIsLandTypeLine,
+  normalizeKey: domainNormalizeKey,
+  normalizeOtag: domainNormalizeOtag,
+} = cardDomain;
+
 const SECTION_ALIASES = new Map([
   ["commander", "commander"],
   ["commanders", "commander"],
@@ -63,7 +88,6 @@ const ROLE_LABELS = {
   "lifegain": "Lifegain",
 };
 
-const MANA_COLORS = ["W", "U", "B", "R", "G"];
 const MANA_SYMBOL_URLS = {
   W: "https://svgs.scryfall.io/card-symbols/W.svg",
   U: "https://svgs.scryfall.io/card-symbols/U.svg",
@@ -71,13 +95,6 @@ const MANA_SYMBOL_URLS = {
   R: "https://svgs.scryfall.io/card-symbols/R.svg",
   G: "https://svgs.scryfall.io/card-symbols/G.svg",
   C: "https://svgs.scryfall.io/card-symbols/C.svg",
-};
-const BASIC_LAND_COLORS = {
-  plains: "W",
-  island: "U",
-  swamp: "B",
-  mountain: "R",
-  forest: "G",
 };
 
 const TURN_ONE_MANA = new Set([
@@ -205,32 +222,19 @@ PLANESWALKERS
 1 Tamiyo, Field Researcher`;
 
 function normalizeKey(value) {
-  return value
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[’]/g, "'")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  return domainNormalizeKey(value);
 }
 
 function normalizeOtag(value) {
-  return normalizeKey(value).replace(/\s+/g, "-");
+  return domainNormalizeOtag(value);
 }
 
 function hasOtag(card, tag) {
-  const target = normalizeOtag(tag);
-  return (card.otags || []).some((otag) => normalizeOtag(otag) === target);
+  return domainHasOtag(card, tag);
 }
 
 function cleanCardName(rawName) {
-  return rawName
-    .replace(/\s+\([A-Z0-9]{2,8}\)\s*[A-Za-z0-9-]*.*$/i, "")
-    .replace(/\s+\[[^\]]+\]\s*$/i, "")
-    .replace(/\s+\*[^*]+\*\s*$/i, "")
-    .replace(/\s+<[^>]+>\s*$/i, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  return domainCleanCardName(rawName);
 }
 
 function extractInlineTags(rawLine) {
@@ -294,85 +298,35 @@ function parseCountLine(rawLine) {
 }
 
 function hasAnyTag(tagSet, candidates) {
-  return candidates.some((tag) => tagSet.has(tag));
+  return domainHasAnyTag(tagSet, candidates);
 }
 
 function getScryfallTypeLines(scryfallCard) {
-  if (!scryfallCard) {
-    return [];
-  }
-
-  const typeLines = [];
-
-  if (scryfallCard.type_line) {
-    typeLines.push(scryfallCard.type_line);
-  }
-
-  if (Array.isArray(scryfallCard.card_faces)) {
-    scryfallCard.card_faces.forEach((face) => {
-      if (face.type_line) {
-        typeLines.push(face.type_line);
-      }
-    });
-  }
-
-  return typeLines;
+  return domainGetScryfallTypeLines(scryfallCard);
 }
 
 function isLandTypeLine(typeLine) {
-  return /\bLand\b/i.test(typeLine);
+  return domainIsLandTypeLine(typeLine);
 }
 
 function getFrontFaceTypeLine(scryfallCard) {
-  if (!scryfallCard) {
-    return "";
-  }
-
-  if (Array.isArray(scryfallCard.card_faces) && scryfallCard.card_faces[0]?.type_line) {
-    return scryfallCard.card_faces[0].type_line;
-  }
-
-  return scryfallCard.type_line || "";
+  return domainGetFrontFaceTypeLine(scryfallCard);
 }
 
 function getCardScryfall(card) {
-  return card.scryfall || {};
+  return domainGetCardScryfall(card);
 }
 
 function getOracleText(card) {
-  const scryfall = getCardScryfall(card);
-  const textParts = [];
-  if (scryfall.oracle_text) textParts.push(scryfall.oracle_text);
-  if (Array.isArray(scryfall.card_faces)) {
-    scryfall.card_faces.forEach((face) => {
-      if (face.oracle_text) textParts.push(face.oracle_text);
-    });
-  }
-  return textParts.join(" ");
+  return domainGetOracleText(card);
 }
 
 function entersTapped(card) {
-  return /enters(?: the battlefield)? tapped/i.test(getOracleText(card));
+  return domainEntersTapped(card);
 }
 
 function getDeckColors(cards) {
-  const colors = new Set();
-
-  cards.forEach((card) => {
-    const scryfall = getCardScryfall(card);
-    const identity = Array.isArray(scryfall.color_identity) ? scryfall.color_identity : [];
-    const printedColors = Array.isArray(scryfall.colors) ? scryfall.colors : [];
-    [...identity, ...printedColors].forEach((color) => {
-      if (MANA_COLORS.includes(color)) colors.add(color);
-    });
-
-    const requirements = getManaCostRequirements(card);
-    MANA_COLORS.forEach((color) => {
-      if (requirements.colors[color] > 0) colors.add(color);
-    });
-  });
-
-  return MANA_COLORS.filter((color) => colors.has(color));
+  return domainGetDeckColors(cards);
 }
 
 function detectCommandersFromSections(parsedDeck) {
@@ -415,7 +369,7 @@ function getCommanderColorIdentity(commanders) {
 }
 
 function getRelevantColors(commanderColorIdentity = []) {
-  return MANA_COLORS.filter((color) => commanderColorIdentity.includes(color));
+  return domainGetRelevantColors(commanderColorIdentity);
 }
 
 function formatColorIdentity(colors) {
@@ -441,118 +395,15 @@ function createManaIconGroup(colors = [], includeColorlessWhenEmpty = true) {
 }
 
 function getProducedColors(card, deckColors = []) {
-  const key = card.key || normalizeKey(card.name || "");
-  const scryfall = getCardScryfall(card);
-  const producedMana = Array.isArray(scryfall.produced_mana) ? scryfall.produced_mana : [];
-
-  if (key === "command tower" || key === "arcane signet") {
-    return deckColors.slice();
-  }
-
-  const basicColor = BASIC_LAND_COLORS[key];
-  if (basicColor) {
-    return [basicColor];
-  }
-
-  if (producedMana.length > 0) {
-    return producedMana.filter((color) => MANA_COLORS.includes(color) || color === "C");
-  }
-
-  if (key === "sol ring") {
-    return ["C"];
-  }
-
-  return [];
+  return domainGetProducedColors(card, deckColors);
 }
 
 function getManaCostRequirements(card) {
-  const scryfall = getCardScryfall(card);
-  const manaCost = scryfall.mana_cost || "";
-  const symbols = [...manaCost.matchAll(/\{([^}]+)\}/g)].map((match) => match[1].toUpperCase());
-  const colors = Object.fromEntries(MANA_COLORS.map((color) => [color, 0]));
-  let generic = 0;
-  let colored = 0;
-  let xCount = 0;
-
-  symbols.forEach((symbol) => {
-    if (/^\d+$/.test(symbol)) {
-      generic += Number.parseInt(symbol, 10);
-      return;
-    }
-
-    if (symbol === "X") {
-      xCount += 1;
-      return;
-    }
-
-    if (MANA_COLORS.includes(symbol)) {
-      colors[symbol] += 1;
-      colored += 1;
-      return;
-    }
-
-    if (symbol === "C") {
-      generic += 1;
-    }
-  });
-
-  if (xCount === 1) {
-    generic += 3;
-  } else if (xCount === 2) {
-    generic += 4;
-  } else if (xCount >= 3) {
-    generic += 3;
-  }
-
-  return {
-    manaCost,
-    generic,
-    colors,
-    colorPips: colored,
-    xCount,
-    total: generic + colored,
-  };
+  return domainGetManaCostRequirements(card);
 }
 
 function canPayManaCost(availableMana, manaCost) {
-  const requiredPips = [];
-
-  MANA_COLORS.forEach((color) => {
-    for (let index = 0; index < (manaCost.colors[color] || 0); index += 1) {
-      requiredPips.push(color);
-    }
-  });
-
-  const sources = (availableMana.sources || []).map((source) => ({
-    colors: Array.isArray(source.colors) ? source.colors : [],
-  }));
-
-  if ((availableMana.total || sources.length) < manaCost.total) {
-    return false;
-  }
-
-  function assignPip(index, usedSources) {
-    if (index >= requiredPips.length) {
-      return true;
-    }
-
-    const color = requiredPips[index];
-    for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex += 1) {
-      if (!usedSources.has(sourceIndex) && sources[sourceIndex].colors.includes(color)) {
-        usedSources.add(sourceIndex);
-        if (assignPip(index + 1, usedSources)) return true;
-        usedSources.delete(sourceIndex);
-      }
-    }
-
-    return false;
-  }
-
-  if (!assignPip(0, new Set())) {
-    return false;
-  }
-
-  return (availableMana.total || sources.length) >= manaCost.total;
+  return domainCanPayManaCost(availableMana, manaCost);
 }
 
 function classifyCard(card) {
@@ -1439,9 +1290,10 @@ function renderMetric(container, label, value, detail, accent) {
 
 function renderDeckMetrics(parsed, result) {
   const container = document.querySelector("#deck-metrics");
+  if (!container) return;
   container.replaceChildren();
 
-  const totals = parsed.totals;
+  const totals = parsed?.totals || summarizeDeck([]);
   const commandDetail =
     totals.commanders > 0
       ? `${totals.total} total, ${totals.commanders} in command zone`
@@ -1771,7 +1623,9 @@ function createEmptyParsedDeck() {
 
 function renderNotes(parsed, leadingMessage = "") {
   const notes = document.querySelector("#parse-notes");
-  const totals = parsed.totals;
+  if (!notes) return;
+  const safeParsed = parsed || createEmptyParsedDeck();
+  const totals = safeParsed.totals || summarizeDeck([]);
   const messages = [];
 
   if (leadingMessage) {
@@ -1786,8 +1640,8 @@ function renderNotes(parsed, leadingMessage = "") {
     messages.push(`${totals.excluded} side or maybe cards excluded`);
   }
 
-  if (parsed.ignored.length > 0) {
-    messages.push(`${parsed.ignored.length} lines skipped`);
+  if ((safeParsed.ignored || []).length > 0) {
+    messages.push(`${safeParsed.ignored.length} lines skipped`);
   }
 
   if (totals.commanders === 2) {
@@ -2360,8 +2214,8 @@ function renderSampleHands(result) {
 function renderEmpty(message = "Load a deck list to begin.") {
   resetLegalityState();
   const parsed = createEmptyParsedDeck();
-  renderDeckMetrics(appState.parsed, null);
-  renderDeckTagReview(appState.parsed);
+  renderDeckMetrics(parsed, null);
+  renderDeckTagReview(parsed);
   renderLandChart(null);
   renderManaStats(null);
   renderColorCurveAnalysis(null, null);
@@ -2387,8 +2241,8 @@ function renderUnparsedDeck(message = "Deck loaded. Click Analyze Deck to parse 
   appState.commanderColorIdentity = [];
   appState.commanderSelectionMode = null;
   const parsed = createEmptyParsedDeck();
-  renderDeckMetrics(appState.parsed, null);
-  renderDeckTagReview(appState.parsed);
+  renderDeckMetrics(parsed, null);
+  renderDeckTagReview(parsed);
   renderLandChart(null);
   renderManaStats(null);
   renderColorCurveAnalysis(null, null);
