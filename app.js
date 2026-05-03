@@ -68,6 +68,8 @@ const simulationDomain =
     : window.EDHCardDomain.simulation;
 
 const {
+  drawCards: domainDrawCards,
+  drawHand: domainDrawHand,
   simulateColorAccess: domainSimulateColorAccess,
 } = simulationDomain;
 
@@ -745,23 +747,8 @@ function buildLibrary(cards, selectedCommanders = []) {
   return library;
 }
 
-function drawHand(library, handSize) {
-  const hand = [];
-  const pool = library.slice();
-  const drawCount = Math.min(handSize, library.length);
-
-  for (let index = 0; index < drawCount; index += 1) {
-    const randomIndex = index + Math.floor(Math.random() * (pool.length - index));
-    [pool[index], pool[randomIndex]] = [pool[randomIndex], pool[index]];
-    hand.push(pool[index]);
-  }
-
-  return hand;
-}
-
-function drawCards(library, count) {
-  return drawHand(library, Math.min(count, library.length));
-}
+const drawHand = domainDrawHand;
+const drawCards = domainDrawCards;
 
 function summarizeHand(hand) {
   const lands = hand.filter((card) => card.isLand).length;
