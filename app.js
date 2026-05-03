@@ -89,6 +89,11 @@ const simulationRenderDomain =
     ? require("./src/ui/simulation-render.js")
     : window.EDHCardDomain.simulationRender;
 
+const deckInputUi =
+  typeof require !== "undefined"
+    ? require("./src/ui/deck-input-ui.js")
+    : window.EDHCardDomain.deckInputUi;
+
 const SECTION_ALIASES = new Map([
   ["commander", "commander"],
   ["commanders", "commander"],
@@ -1451,37 +1456,10 @@ function createEmptyParsedDeck() {
 }
 
 function renderNotes(parsed, leadingMessage = "") {
-  const notes = document.querySelector("#parse-notes");
-  if (!notes) return;
-  const safeParsed = parsed || createEmptyParsedDeck();
-  const totals = safeParsed.totals || summarizeDeck([]);
-  const messages = [];
-
-  if (leadingMessage) {
-    messages.push(leadingMessage);
-  }
-
-  if (totals.library > 0) {
-    messages.push(`Parsed ${totals.total} deck cards and ${totals.library} library cards`);
-  }
-
-  if (totals.excluded > 0) {
-    messages.push(`${totals.excluded} side or maybe cards excluded`);
-  }
-
-  if ((safeParsed.ignored || []).length > 0) {
-    messages.push(`${safeParsed.ignored.length} lines skipped`);
-  }
-
-  if (totals.commanders === 2) {
-    messages.push("Two commanders selected");
-  }
-
-  if (totals.library > 0 && ![98, 99].includes(totals.library)) {
-    messages.push("EDH libraries are usually 99 cards with one commander or 98 with two");
-  }
-
-  notes.textContent = messages.join(". ");
+  deckInputUi.renderDeckInputNotes(parsed, leadingMessage, {
+    createEmptyParsedDeck,
+    summarizeDeck,
+  });
 }
 
 function renderLegalityIssuesList(report) {
@@ -1500,7 +1478,6 @@ function renderLegalityIssuesList(report) {
 }
 
 function renderLoadState() {
-  const deckText = document.querySelector("#deck-text");
   const workspace = document.querySelector(".workspace");
   const importPanel = document.querySelector(".import-panel");
   const modalBackdrop = document.querySelector("#commander-modal-backdrop");
@@ -1526,25 +1503,25 @@ function renderLoadState() {
   const commanderNote = document.querySelector("#commander-note");
   const commanderSelects = document.querySelectorAll(".commander-select");
   const commanderCandidatePreview = document.querySelector("#commander-candidate-preview");
-  const analyzeButton = document.querySelector("#analyze-button");
-  const hasDeckText = deckText.value.trim().length > 0;
-  const hasParsedDeck = Boolean(appState.parsed && appState.parsed.cards.length > 0);
-  const hasAnalysis = Boolean(appState.simulationFeatures);
-  const isAwaitingConfirmation = appState.awaitingCommanderConfirmation && hasParsedDeck;
-  const isAwaitingLegality = appState.awaitingLegalityConfirmation && hasParsedDeck;
+  const {
+    hasParsedDeck,
+    hasAnalysis,
+    isAwaitingConfirmation,
+    isAwaitingLegality,
+  } = deckInputUi.updateContinueButton({
+    parsed: appState.parsed,
+    simulationFeatures: appState.simulationFeatures,
+    isParsing: appState.isParsing,
+    awaitingLegalityConfirmation: appState.awaitingLegalityConfirmation,
+    awaitingCommanderConfirmation: appState.awaitingCommanderConfirmation,
+    selectedCommanders: appState.selectedCommanders,
+  });
   const shouldCollapseInput = appState.isDeckPanelCollapsed && hasParsedDeck && hasAnalysis;
-  const actionLabel = "Continue";
   const isCommanderModalOpen = appState.isParsing || appState.isAnalyzing || isAwaitingConfirmation || isAwaitingLegality;
 
   workspace.classList.toggle("results-focus", shouldCollapseInput);
   importPanel.classList.toggle("is-hidden", shouldCollapseInput);
   loadedDeckToolbar.classList.toggle("is-hidden", !shouldCollapseInput);
-  analyzeButton.disabled =
-    appState.isParsing ||
-    isAwaitingLegality ||
-    (!hasParsedDeck && !hasDeckText) ||
-    (isAwaitingConfirmation && appState.selectedCommanders.length === 0);
-  analyzeButton.textContent = appState.isParsing ? `${actionLabel}...` : actionLabel;
 
   if (shouldCollapseInput) {
     const parsed = appState.parsed;
@@ -1708,8 +1685,7 @@ function renderUnparsedDeck(message = "Deck loaded. Click Analyze Deck to parse 
 }
 
 function setDeckText(text) {
-  const deckText = document.querySelector("#deck-text");
-  deckText.value = text;
+  deckInputUi.setDeckTextValue(text);
   renderUnparsedDeck();
 }
 
@@ -1895,8 +1871,7 @@ function refreshLibraryForCommanders() {
 }
 
 function clearDeck() {
-  const deckText = document.querySelector("#deck-text");
-  deckText.value = "";
+  deckInputUi.clearDeckTextValue();
   appState.parsed = null;
   appState.libraryCards = [];
   appState.library = [];
@@ -1923,11 +1898,11 @@ function editDeckList() {
   appState.reviewOpen = false;
   appState.reviewShowDetails = false;
   renderLoadState();
-  document.querySelector("#deck-text")?.focus();
+  deckInputUi.focusDeckText();
 }
 
 async function parseLoadedDeck() {
-  const rawText = document.querySelector("#deck-text").value;
+  const rawText = deckInputUi.getDeckTextValue();
   const previousCommanderKeys = [...appState.selectedCommanderKeys];
 
   if (!rawText.trim()) {
@@ -2099,7 +2074,7 @@ function handleDeckTextInput() {
   appState.isDeckPanelCollapsed = false;
   renderLoadState();
 
-  if (!document.querySelector("#deck-text").value.trim()) {
+  if (!deckInputUi.getDeckTextValue().trim()) {
     renderNotes(createEmptyParsedDeck(), "Paste a deck list to begin");
     return;
   }
@@ -2172,7 +2147,7 @@ function editDeckFromLegalityWarning() {
   renderNotes(appState.parsed, "Update your deck list to resolve legality issues.");
   appState.isDeckPanelCollapsed = false;
   renderLoadState();
-  document.querySelector("#deck-text")?.focus();
+  deckInputUi.focusDeckText();
 }
 
 function closeCommanderConfirmation() {
@@ -2281,7 +2256,7 @@ function handleCommanderSelectChange(event) {
 }
 
 function initApp() {
-  const deckText = document.querySelector("#deck-text");
+  const deckText = deckInputUi.getDeckTextElement();
   const sampleButton = document.querySelector("#sample-button");
   const clearButton = document.querySelector("#clear-button");
   const clearStartOverButton = document.querySelector("#clear-start-over-button");
