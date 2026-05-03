@@ -68,9 +68,13 @@ const simulationDomain =
     : window.EDHCardDomain.simulation;
 
 const {
+  createEmptyDistribution: domainCreateEmptyDistribution,
+  createOpeningHandStats: domainCreateOpeningHandStats,
   drawCards: domainDrawCards,
   drawHand: domainDrawHand,
+  recordOpeningHandStats: domainRecordOpeningHandStats,
   simulateColorAccess: domainSimulateColorAccess,
+  summarizeHand: domainSummarizeHand,
 } = simulationDomain;
 
 const SECTION_ALIASES = new Map([
@@ -749,84 +753,26 @@ function buildLibrary(cards, selectedCommanders = []) {
 
 const drawHand = domainDrawHand;
 const drawCards = domainDrawCards;
-
-function summarizeHand(hand) {
-  const lands = hand.filter((card) => card.isLand).length;
-  const ramp = hand.filter((card) => card.isRamp).length;
-  const turnOneRamp = hand.filter((card) => card.isTurnOneRamp).length;
-  const manaSources = lands + ramp;
-  const keepableLands = lands >= 2 && lands <= 4;
-
-  return {
-    lands,
-    ramp,
-    turnOneRamp,
-    manaSources,
-    keepableLands,
-    lowLand: lands <= 1,
-    highLand: lands >= 5,
-    twoLandRamp: lands >= 2 && ramp >= 1,
-    threeManaSources: manaSources >= 3,
-  };
-}
-
-function createEmptyDistribution(handSize) {
-  const distribution = new Map();
-  for (let lands = 0; lands <= handSize; lands += 1) {
-    distribution.set(lands, 0);
-  }
-  return distribution;
-}
+const summarizeHand = domainSummarizeHand;
+const createEmptyDistribution = domainCreateEmptyDistribution;
+const createOpeningHandStats = domainCreateOpeningHandStats;
+const recordOpeningHandStats = domainRecordOpeningHandStats;
 
 function runSimulation(library, options = {}) {
   const handSize = options.handSize ?? 7;
   const simulations = options.simulations ?? 10000;
   const deckColors = getDeckColors(library);
-  const distribution = createEmptyDistribution(handSize);
+  const openingHandStats = createOpeningHandStats(handSize);
+  const distribution = openingHandStats.distribution;
+  const counters = openingHandStats.counters;
+  const examples = openingHandStats.examples;
   const manaTotalsByTurn = Array.from({ length: 8 }, () => 0);
   const thresholdHitsByTurn = Array.from({ length: 8 }, () => 0);
-  const counters = {
-    keepableLands: 0,
-    lowLand: 0,
-    highLand: 0,
-    hasRamp: 0,
-    hasTurnOneRamp: 0,
-    twoLandRamp: 0,
-    threeManaSources: 0,
-  };
-  const examples = {
-    keep: null,
-    low: null,
-    high: null,
-  };
-  let totalLands = 0;
 
   for (let i = 0; i < simulations; i += 1) {
     const draws = drawCards(library, OPENING_HAND_SIZE + 7);
     const hand = draws.slice(0, handSize);
-    const summary = summarizeHand(hand);
-    distribution.set(summary.lands, (distribution.get(summary.lands) || 0) + 1);
-    totalLands += summary.lands;
-
-    if (summary.keepableLands) counters.keepableLands += 1;
-    if (summary.lowLand) counters.lowLand += 1;
-    if (summary.highLand) counters.highLand += 1;
-    if (summary.ramp > 0) counters.hasRamp += 1;
-    if (summary.turnOneRamp > 0) counters.hasTurnOneRamp += 1;
-    if (summary.twoLandRamp) counters.twoLandRamp += 1;
-    if (summary.threeManaSources) counters.threeManaSources += 1;
-
-    if (!examples.keep && summary.keepableLands && summary.ramp > 0) {
-      examples.keep = { hand, summary };
-    }
-
-    if (!examples.low && summary.lowLand) {
-      examples.low = { hand, summary };
-    }
-
-    if (!examples.high && summary.highLand) {
-      examples.high = { hand, summary };
-    }
+    recordOpeningHandStats(openingHandStats, hand);
 
     for (let turn = 1; turn <= 8; turn += 1) {
       const visibleCards = getVisibleCardsForTurn(draws, turn);
@@ -867,7 +813,7 @@ function runSimulation(library, options = {}) {
       })),
     },
     counters,
-    averageLands: totalLands / simulations,
+    averageLands: openingHandStats.totalLands / simulations,
     examples: Object.values(examples).filter(Boolean),
   };
 }

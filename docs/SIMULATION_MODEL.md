@@ -6,7 +6,7 @@ Describe the current turn-by-turn simulation model and how game-state estimates 
 ## Automated Testability
 - Simulation logic is testable from Node without browser/UI dependencies.
 - Core functions are exported from `app.js` and can be validated with fixture-based unit tests.
-- The draw primitives and color access simulation live in `src/domain/simulation.js`; `app.js` keeps compatibility references for existing UI and tests.
+- The draw primitives, opening-hand statistics helpers, and color access simulation live in `src/domain/simulation.js`; `app.js` keeps compatibility references for existing UI and tests.
 - Test execution command:
   - `npm test`
 - The paste-first UX flow ("Paste decklist -> Confirm commander(s) -> Analyze Deck -> Results") is wired without changing simulation/model outputs.
@@ -51,6 +51,7 @@ Legacy fields are still returned for compatibility while UI migration remains in
 - Draws are random without replacement.
 - Visible cards for turn N include opening hand plus draws up to turn N.
 - Low-level draw helpers (`drawHand`, `drawCards`) are implemented once in `src/domain/simulation.js` and reused by `app.js`.
+- Opening-hand land/ramp counters, land distribution, and sample-hand selection are recorded by pure helpers in `src/domain/simulation.js`.
 
 ## Mana Tracking (Lands + Ramp)
 - Land availability is estimated from visible land cards and one land play per turn.

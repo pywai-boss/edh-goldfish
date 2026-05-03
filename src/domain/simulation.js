@@ -60,6 +60,86 @@ function drawCards(library, count) {
   return drawHand(library, Math.min(count, library.length));
 }
 
+function summarizeHand(hand) {
+  const lands = hand.filter((card) => card.isLand).length;
+  const ramp = hand.filter((card) => card.isRamp).length;
+  const turnOneRamp = hand.filter((card) => card.isTurnOneRamp).length;
+  const manaSources = lands + ramp;
+  const keepableLands = lands >= 2 && lands <= 4;
+
+  return {
+    lands,
+    ramp,
+    turnOneRamp,
+    manaSources,
+    keepableLands,
+    lowLand: lands <= 1,
+    highLand: lands >= 5,
+    twoLandRamp: lands >= 2 && ramp >= 1,
+    threeManaSources: manaSources >= 3,
+  };
+}
+
+function createEmptyDistribution(handSize) {
+  const distribution = new Map();
+  for (let lands = 0; lands <= handSize; lands += 1) {
+    distribution.set(lands, 0);
+  }
+  return distribution;
+}
+
+function createOpeningHandStats(handSize) {
+  return {
+    distribution: createEmptyDistribution(handSize),
+    counters: {
+      keepableLands: 0,
+      lowLand: 0,
+      highLand: 0,
+      hasRamp: 0,
+      hasTurnOneRamp: 0,
+      twoLandRamp: 0,
+      threeManaSources: 0,
+    },
+    examples: {
+      keep: null,
+      low: null,
+      high: null,
+    },
+    totalLands: 0,
+  };
+}
+
+function recordOpeningHandStats(openingHandStats, hand) {
+  const summary = summarizeHand(hand);
+  openingHandStats.distribution.set(
+    summary.lands,
+    (openingHandStats.distribution.get(summary.lands) || 0) + 1,
+  );
+  openingHandStats.totalLands += summary.lands;
+
+  if (summary.keepableLands) openingHandStats.counters.keepableLands += 1;
+  if (summary.lowLand) openingHandStats.counters.lowLand += 1;
+  if (summary.highLand) openingHandStats.counters.highLand += 1;
+  if (summary.ramp > 0) openingHandStats.counters.hasRamp += 1;
+  if (summary.turnOneRamp > 0) openingHandStats.counters.hasTurnOneRamp += 1;
+  if (summary.twoLandRamp) openingHandStats.counters.twoLandRamp += 1;
+  if (summary.threeManaSources) openingHandStats.counters.threeManaSources += 1;
+
+  if (!openingHandStats.examples.keep && summary.keepableLands && summary.ramp > 0) {
+    openingHandStats.examples.keep = { hand, summary };
+  }
+
+  if (!openingHandStats.examples.low && summary.lowLand) {
+    openingHandStats.examples.low = { hand, summary };
+  }
+
+  if (!openingHandStats.examples.high && summary.highLand) {
+    openingHandStats.examples.high = { hand, summary };
+  }
+
+  return summary;
+}
+
 function getVisibleCardsForTurn(draws, turn) {
   const drawCount = Math.min(draws.length, OPENING_HAND_SIZE + Math.max(0, turn - 1));
   return draws.slice(0, drawCount);
@@ -192,11 +272,15 @@ function simulateColorAccess(deck, iterations = 10000, commanderColorIdentity = 
 
 const exported = {
   chooseLandsForTurn,
+  createEmptyDistribution,
+  createOpeningHandStats,
   drawCards,
   drawHand,
   getAvailableManaForTurn,
   getVisibleCardsForTurn,
+  recordOpeningHandStats,
   simulateColorAccess,
+  summarizeHand,
 };
 
 if (typeof module !== "undefined") {

@@ -22,3 +22,4 @@
 - Extracted Commander legality validation into `src/domain/legality.js`
 - Extracted color access simulation into `src/domain/simulation.js` while preserving the existing app API
 - Reused `src/domain/simulation.js` draw primitives from `app.js` to remove duplicated draw helper bodies
+- Extracted opening-hand summary, distribution, counters, and example-hand recording into `src/domain/simulation.js`
