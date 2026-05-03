@@ -18,3 +18,4 @@
 - Extracted pure card and mana helper logic into `src/domain/cards.js` while preserving existing app behavior
 - Scoped `src/domain/cards.js` browser globals to restore app initialization after helper extraction
 - Added defensive empty-state handling for deck metric rendering after helper extraction
+- Extracted pure commander candidate, partner, color identity, and legality helpers into `src/domain/commander.js`
