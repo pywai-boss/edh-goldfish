@@ -140,6 +140,13 @@ function recordOpeningHandStats(openingHandStats, hand) {
   return summary;
 }
 
+function createManaTimelineStats() {
+  return {
+    manaTotalsByTurn: Array.from({ length: 8 }, () => 0),
+    thresholdHitsByTurn: Array.from({ length: 8 }, () => 0),
+  };
+}
+
 function getVisibleCardsForTurn(draws, turn) {
   const drawCount = Math.min(draws.length, OPENING_HAND_SIZE + Math.max(0, turn - 1));
   return draws.slice(0, drawCount);
@@ -214,6 +221,27 @@ function getAvailableManaForTurn(visibleCards, turn, deckColors) {
   };
 }
 
+function recordManaTimelineStats(manaTimelineStats, draws, deckColors) {
+  for (let turn = 1; turn <= 8; turn += 1) {
+    const visibleCards = getVisibleCardsForTurn(draws, turn);
+    const availableMana = getAvailableManaForTurn(visibleCards, turn, deckColors);
+    manaTimelineStats.manaTotalsByTurn[turn - 1] += availableMana.total;
+
+    if (turn >= 2 && availableMana.total >= turn) {
+      manaTimelineStats.thresholdHitsByTurn[turn - 1] += 1;
+    }
+  }
+}
+
+function buildManaByTurn(manaTimelineStats, simulations) {
+  return Array.from({ length: 8 }, (_, index) => ({
+    turn: index + 1,
+    averageTotalMana: manaTimelineStats.manaTotalsByTurn[index] / simulations,
+    threshold: index + 1,
+    atLeastThresholdCount: manaTimelineStats.thresholdHitsByTurn[index],
+  }));
+}
+
 function simulateColorAccess(deck, iterations = 10000, commanderColorIdentity = null) {
   const library = deck.some((card) => card.copy !== undefined) ? deck : buildLibrary(deck);
   const sourceCards = deck.some((card) => card.copy !== undefined) ? deck : deck;
@@ -271,13 +299,16 @@ function simulateColorAccess(deck, iterations = 10000, commanderColorIdentity = 
 }
 
 const exported = {
+  buildManaByTurn,
   chooseLandsForTurn,
   createEmptyDistribution,
+  createManaTimelineStats,
   createOpeningHandStats,
   drawCards,
   drawHand,
   getAvailableManaForTurn,
   getVisibleCardsForTurn,
+  recordManaTimelineStats,
   recordOpeningHandStats,
   simulateColorAccess,
   summarizeHand,

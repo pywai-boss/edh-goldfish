@@ -68,10 +68,13 @@ const simulationDomain =
     : window.EDHCardDomain.simulation;
 
 const {
+  buildManaByTurn: domainBuildManaByTurn,
   createEmptyDistribution: domainCreateEmptyDistribution,
+  createManaTimelineStats: domainCreateManaTimelineStats,
   createOpeningHandStats: domainCreateOpeningHandStats,
   drawCards: domainDrawCards,
   drawHand: domainDrawHand,
+  recordManaTimelineStats: domainRecordManaTimelineStats,
   recordOpeningHandStats: domainRecordOpeningHandStats,
   simulateColorAccess: domainSimulateColorAccess,
   summarizeHand: domainSummarizeHand,
@@ -757,6 +760,9 @@ const summarizeHand = domainSummarizeHand;
 const createEmptyDistribution = domainCreateEmptyDistribution;
 const createOpeningHandStats = domainCreateOpeningHandStats;
 const recordOpeningHandStats = domainRecordOpeningHandStats;
+const createManaTimelineStats = domainCreateManaTimelineStats;
+const recordManaTimelineStats = domainRecordManaTimelineStats;
+const buildManaByTurn = domainBuildManaByTurn;
 
 function runSimulation(library, options = {}) {
   const handSize = options.handSize ?? 7;
@@ -766,31 +772,16 @@ function runSimulation(library, options = {}) {
   const distribution = openingHandStats.distribution;
   const counters = openingHandStats.counters;
   const examples = openingHandStats.examples;
-  const manaTotalsByTurn = Array.from({ length: 8 }, () => 0);
-  const thresholdHitsByTurn = Array.from({ length: 8 }, () => 0);
+  const manaTimelineStats = createManaTimelineStats();
 
   for (let i = 0; i < simulations; i += 1) {
     const draws = drawCards(library, OPENING_HAND_SIZE + 7);
     const hand = draws.slice(0, handSize);
     recordOpeningHandStats(openingHandStats, hand);
-
-    for (let turn = 1; turn <= 8; turn += 1) {
-      const visibleCards = getVisibleCardsForTurn(draws, turn);
-      const availableMana = getAvailableManaForTurn(visibleCards, turn, deckColors);
-      manaTotalsByTurn[turn - 1] += availableMana.total;
-
-      if (turn >= 2 && availableMana.total >= turn) {
-        thresholdHitsByTurn[turn - 1] += 1;
-      }
-    }
+    recordManaTimelineStats(manaTimelineStats, draws, deckColors);
   }
 
-  const manaByTurn = Array.from({ length: 8 }, (_, index) => ({
-    turn: index + 1,
-    averageTotalMana: manaTotalsByTurn[index] / simulations,
-    threshold: index + 1,
-    atLeastThresholdCount: thresholdHitsByTurn[index],
-  }));
+  const manaByTurn = buildManaByTurn(manaTimelineStats, simulations);
 
   return {
     simulations,

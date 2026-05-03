@@ -6,7 +6,7 @@ Describe the current turn-by-turn simulation model and how game-state estimates 
 ## Automated Testability
 - Simulation logic is testable from Node without browser/UI dependencies.
 - Core functions are exported from `app.js` and can be validated with fixture-based unit tests.
-- The draw primitives, opening-hand statistics helpers, and color access simulation live in `src/domain/simulation.js`; `app.js` keeps compatibility references for existing UI and tests.
+- The draw primitives, opening-hand statistics helpers, mana timeline helpers, and color access simulation live in `src/domain/simulation.js`; `app.js` keeps compatibility references for existing UI and tests.
 - Test execution command:
   - `npm test`
 - The paste-first UX flow ("Paste decklist -> Confirm commander(s) -> Analyze Deck -> Results") is wired without changing simulation/model outputs.
@@ -86,6 +86,7 @@ Legacy fields are still returned for compatibility while UI migration remains in
 
 ## Mana Development Aggregation
 - Per simulation run, the model tracks available mana for turn 1 through turn 8.
+- Turn-by-turn mana counters are recorded by pure helpers in `src/domain/simulation.js`, then assembled into the existing `manaByTurn` result shape.
 - Aggregate outputs include:
   - average available mana on each turn
   - threshold hit counts/percentages for:
