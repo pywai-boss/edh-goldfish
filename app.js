@@ -30,8 +30,6 @@ const commanderDomain =
 
 const {
   canCardsFormLegalPartnerPair: domainCanCardsFormLegalPartnerPair,
-  cardFitsCommanderIdentity: domainCardFitsCommanderIdentity,
-  dedupeNames: domainDedupeNames,
   detectCommandersFromSections: domainDetectCommandersFromSections,
   getCandidateColorIdentity: domainGetCandidateColorIdentity,
   getCombinedCommanderColorIdentity: domainGetCombinedCommanderColorIdentity,
@@ -39,7 +37,6 @@ const {
   getCommanderColorIdentity: domainGetCommanderColorIdentity,
   getCommanderKey: domainGetCommanderKey,
   getCommanderKeySet: domainGetCommanderKeySet,
-  getCommanderLegalityIssueMessage: domainGetCommanderLegalityIssueMessage,
   getCommanderOptions: domainGetCommanderOptions,
   getCommanderPartnerProfile: domainGetCommanderPartnerProfile,
   getDeckRequiredColorIdentityFromNonCommanders: domainGetDeckRequiredColorIdentityFromNonCommanders,
@@ -51,8 +48,28 @@ const {
   isDoctorCommanderCard: domainIsDoctorCommanderCard,
   isLikelyCommanderCandidate: domainIsLikelyCommanderCandidate,
   isOutsideDeckCard: domainIsOutsideDeckCard,
-  validateCommanderDeckLegality: domainValidateCommanderDeckLegality,
 } = commanderDomain;
+
+const legalityDomain =
+  typeof require !== "undefined"
+    ? require("./src/domain/legality.js")
+    : window.EDHCardDomain.legality;
+
+const {
+  cardFitsCommanderIdentity: domainCardFitsCommanderIdentity,
+  dedupeNames: domainDedupeNames,
+  getCommanderLegalityIssueMessage: domainGetCommanderLegalityIssueMessage,
+  validateCommanderDeckLegality: domainValidateCommanderDeckLegality,
+} = legalityDomain;
+
+const simulationDomain =
+  typeof require !== "undefined"
+    ? require("./src/domain/simulation.js")
+    : window.EDHCardDomain.simulation;
+
+const {
+  simulateColorAccess: domainSimulateColorAccess,
+} = simulationDomain;
 
 const SECTION_ALIASES = new Map([
   ["commander", "commander"],
@@ -953,59 +970,7 @@ function getCastableSpellsForTurn(visibleCards, availableMana, turn) {
 }
 
 function simulateColorAccess(deck, iterations = 10000, commanderColorIdentity = null) {
-  const library = deck.some((card) => card.copy !== undefined) ? deck : buildLibrary(deck);
-  const sourceCards = deck.some((card) => card.copy !== undefined) ? deck : deck;
-  const deckColors = getRelevantColors(commanderColorIdentity || getDeckColors(sourceCards));
-  const turnStats = Array.from({ length: 8 }, (_, index) => ({
-    turn: index + 1,
-    colors: Object.fromEntries(MANA_COLORS.map((color) => [color, 0])),
-    fullCommanderIdentityAccess: 0,
-    allColors: 0,
-  }));
-
-  for (let iteration = 0; iteration < iterations; iteration += 1) {
-    const draws = drawCards(library, OPENING_HAND_SIZE + 7);
-
-    for (let turn = 1; turn <= 8; turn += 1) {
-      const visibleCards = getVisibleCardsForTurn(draws, turn);
-      const availableMana = getAvailableManaForTurn(visibleCards, turn, deckColors);
-      MANA_COLORS.forEach((color) => {
-        if (availableMana.colorCounts[color] > 0) {
-          turnStats[turn - 1].colors[color] += 1;
-        }
-      });
-
-      if (deckColors.every((color) => availableMana.colorCounts[color] > 0)) {
-        turnStats[turn - 1].fullCommanderIdentityAccess += 1;
-        turnStats[turn - 1].allColors += 1;
-      }
-    }
-  }
-
-  const colorsByTurn = turnStats.map((turnData) => ({
-    turn: turnData.turn,
-    colorHits: { ...turnData.colors },
-  }));
-  const fullCommanderColorAccessByTurn = turnStats.map((turnData) => ({
-    turn: turnData.turn,
-    hitCount: turnData.fullCommanderIdentityAccess,
-  }));
-
-  return {
-    iterations,
-    deckColors,
-    colorsByTurn,
-    commanderColorAccessByTurn: colorsByTurn,
-    fullCommanderColorAccessByTurn,
-    simulationFeatures: {
-      manaByTurn: [],
-      colorsByTurn,
-      fullCommanderColorAccessByTurn,
-      castabilityByTurn: [],
-      commanderTiming: null,
-    },
-    turns: turnStats,
-  };
+  return domainSimulateColorAccess(deck, iterations, commanderColorIdentity);
 }
 
 function simulateCurveAccess(deck, iterations = 10000, commanderColorIdentity = null) {

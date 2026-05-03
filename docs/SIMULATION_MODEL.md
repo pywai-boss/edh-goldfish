@@ -6,6 +6,7 @@ Describe the current turn-by-turn simulation model and how game-state estimates 
 ## Automated Testability
 - Simulation logic is testable from Node without browser/UI dependencies.
 - Core functions are exported from `app.js` and can be validated with fixture-based unit tests.
+- The color access simulation lives in `src/domain/simulation.js`; `app.js` keeps a compatibility wrapper for existing UI and tests.
 - Test execution command:
   - `npm test`
 - The paste-first UX flow ("Paste decklist -> Confirm commander(s) -> Analyze Deck -> Results") is wired without changing simulation/model outputs.
@@ -100,6 +101,7 @@ Legacy fields are still returned for compatibility while UI migration remains in
 
 ## Color Access Aggregation
 - Color access is tracked turn-by-turn for turns 1-8.
+- The color access cluster is implemented as pure domain logic in `src/domain/simulation.js` and has no DOM or Scryfall/network dependencies.
 - Reusable result structure includes:
   - `colorsByTurn` (per-turn per-color hit counts)
   - `simulationFeatures.colorsByTurn` (canonical feature path)

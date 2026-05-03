@@ -19,3 +19,5 @@
 - Scoped `src/domain/cards.js` browser globals to restore app initialization after helper extraction
 - Added defensive empty-state handling for deck metric rendering after helper extraction
 - Extracted pure commander candidate, partner, color identity, and legality helpers into `src/domain/commander.js`
+- Extracted Commander legality validation into `src/domain/legality.js`
+- Extracted color access simulation into `src/domain/simulation.js` while preserving the existing app API
