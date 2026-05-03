@@ -7,6 +7,7 @@ Describe the current turn-by-turn simulation model and how game-state estimates 
 - Simulation logic is testable from Node without browser/UI dependencies.
 - Core functions are exported from `app.js` and can be validated with fixture-based unit tests.
 - The simulation model wrapper, commander-aware library setup, draw primitives, opening-hand statistics helpers, mana timeline helpers, and color access simulation live in `src/domain/simulation.js`; `app.js` keeps compatibility references for existing UI and tests.
+- Simulation result rendering lives in `src/ui/simulation-render.js`; it consumes existing result objects without changing model output shapes.
 - Test execution command:
   - `npm test`
 - The paste-first UX flow ("Paste decklist -> Confirm commander(s) -> Analyze Deck -> Results") is wired without changing simulation/model outputs.

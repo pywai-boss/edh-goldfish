@@ -26,3 +26,4 @@
 - Extracted turn-by-turn mana timeline counters and `manaByTurn` construction into `src/domain/simulation.js`
 - Extracted commander-aware card zone marking and library construction reuse into `src/domain/simulation.js`
 - Added `buildSimulationModel` domain entry point for the main simulation result wrapper
+- Extracted simulation result rendering into `src/ui/simulation-render.js` while preserving displayed text and classes
