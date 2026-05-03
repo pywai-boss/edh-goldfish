@@ -6,7 +6,7 @@ Describe the current turn-by-turn simulation model and how game-state estimates 
 ## Automated Testability
 - Simulation logic is testable from Node without browser/UI dependencies.
 - Core functions are exported from `app.js` and can be validated with fixture-based unit tests.
-- The draw primitives, opening-hand statistics helpers, mana timeline helpers, and color access simulation live in `src/domain/simulation.js`; `app.js` keeps compatibility references for existing UI and tests.
+- The commander-aware library setup, draw primitives, opening-hand statistics helpers, mana timeline helpers, and color access simulation live in `src/domain/simulation.js`; `app.js` keeps compatibility references for existing UI and tests.
 - Test execution command:
   - `npm test`
 - The paste-first UX flow ("Paste decklist -> Confirm commander(s) -> Analyze Deck -> Results") is wired without changing simulation/model outputs.
@@ -66,6 +66,7 @@ Legacy fields are still returned for compatibility while UI migration remains in
 ## Commander Evaluation
 - Commander cards are selected from commander section detection or manual selection.
 - One or two commanders are supported.
+- Commander-aware simulation setup marks selected commanders as command-zone cards and builds the simulation library in `src/domain/simulation.js`.
 - Commander castability is evaluated from command zone assumptions, not from hand draws.
 - Partner-style selection combines color identity while evaluating each commander cost independently.
 - When no commander section is present, commander suggestions are filtered by deck-required color identity:

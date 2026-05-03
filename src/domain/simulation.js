@@ -42,6 +42,18 @@ function buildLibrary(cards, selectedCommanders = []) {
   return library;
 }
 
+function markCommandZoneCards(cards, selectedCommanders = []) {
+  const commanderKeySet = getCommanderKeySet(selectedCommanders);
+  return cards.map((card) => {
+    const commandZone = isCommandZoneCard(card, commanderKeySet);
+    return {
+      ...card,
+      isCommander: commandZone,
+      zone: commandZone ? "command" : isOutsideDeckCard(card) ? "outside" : "library",
+    };
+  });
+}
+
 function drawHand(library, handSize) {
   const hand = [];
   const pool = library.slice();
@@ -300,6 +312,8 @@ function simulateColorAccess(deck, iterations = 10000, commanderColorIdentity = 
 
 const exported = {
   buildManaByTurn,
+  buildLibrary,
+  buildLibraryCards,
   chooseLandsForTurn,
   createEmptyDistribution,
   createManaTimelineStats,
@@ -308,6 +322,7 @@ const exported = {
   drawHand,
   getAvailableManaForTurn,
   getVisibleCardsForTurn,
+  markCommandZoneCards,
   recordManaTimelineStats,
   recordOpeningHandStats,
   simulateColorAccess,

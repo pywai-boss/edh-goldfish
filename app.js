@@ -69,11 +69,14 @@ const simulationDomain =
 
 const {
   buildManaByTurn: domainBuildManaByTurn,
+  buildLibrary: domainBuildLibrary,
+  buildLibraryCards: domainBuildLibraryCards,
   createEmptyDistribution: domainCreateEmptyDistribution,
   createManaTimelineStats: domainCreateManaTimelineStats,
   createOpeningHandStats: domainCreateOpeningHandStats,
   drawCards: domainDrawCards,
   drawHand: domainDrawHand,
+  markCommandZoneCards: domainMarkCommandZoneCards,
   recordManaTimelineStats: domainRecordManaTimelineStats,
   recordOpeningHandStats: domainRecordOpeningHandStats,
   simulateColorAccess: domainSimulateColorAccess,
@@ -737,23 +740,9 @@ function summarizeRoleCounts(cards, selectedCommanders = []) {
   return counts;
 }
 
-function buildLibraryCards(cards, selectedCommanders = []) {
-  const commanderKeySet = getCommanderKeySet(selectedCommanders);
-  return cards.filter((card) => !isOutsideDeckCard(card) && !isCommandZoneCard(card, commanderKeySet));
-}
-
-function buildLibrary(cards, selectedCommanders = []) {
-  const library = [];
-
-  buildLibraryCards(cards, selectedCommanders).forEach((card) => {
-    for (let copy = 0; copy < card.count; copy += 1) {
-      library.push({ ...card, copy });
-    }
-  });
-
-  return library;
-}
-
+const buildLibraryCards = domainBuildLibraryCards;
+const buildLibrary = domainBuildLibrary;
+const markCommandZoneCards = domainMarkCommandZoneCards;
 const drawHand = domainDrawHand;
 const drawCards = domainDrawCards;
 const summarizeHand = domainSummarizeHand;
@@ -2333,15 +2322,7 @@ function refreshLibraryForCommanders() {
   }
 
   const commanders = getSelectedCommanderCards(appState.parsed);
-  const commanderKeySet = getCommanderKeySet(commanders);
-  const cards = appState.parsed.cards.map((card) => {
-    const commandZone = isCommandZoneCard(card, commanderKeySet);
-    return {
-      ...card,
-      isCommander: commandZone,
-      zone: commandZone ? "command" : isOutsideDeckCard(card) ? "outside" : "library",
-    };
-  });
+  const cards = markCommandZoneCards(appState.parsed.cards, commanders);
   appState.libraryCards = buildLibraryCards(cards, commanders);
   appState.library = buildLibrary(cards, commanders);
   appState.parsed = {
