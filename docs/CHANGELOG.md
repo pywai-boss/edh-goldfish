@@ -25,3 +25,4 @@
 - Extracted opening-hand summary, distribution, counters, and example-hand recording into `src/domain/simulation.js`
 - Extracted turn-by-turn mana timeline counters and `manaByTurn` construction into `src/domain/simulation.js`
 - Extracted commander-aware card zone marking and library construction reuse into `src/domain/simulation.js`
+- Added `buildSimulationModel` domain entry point for the main simulation result wrapper

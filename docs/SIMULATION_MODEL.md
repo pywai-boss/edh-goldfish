@@ -6,7 +6,7 @@ Describe the current turn-by-turn simulation model and how game-state estimates 
 ## Automated Testability
 - Simulation logic is testable from Node without browser/UI dependencies.
 - Core functions are exported from `app.js` and can be validated with fixture-based unit tests.
-- The commander-aware library setup, draw primitives, opening-hand statistics helpers, mana timeline helpers, and color access simulation live in `src/domain/simulation.js`; `app.js` keeps compatibility references for existing UI and tests.
+- The simulation model wrapper, commander-aware library setup, draw primitives, opening-hand statistics helpers, mana timeline helpers, and color access simulation live in `src/domain/simulation.js`; `app.js` keeps compatibility references for existing UI and tests.
 - Test execution command:
   - `npm test`
 - The paste-first UX flow ("Paste decklist -> Confirm commander(s) -> Analyze Deck -> Results") is wired without changing simulation/model outputs.
@@ -30,6 +30,7 @@ The simulation layer now exposes a canonical `SimulationFeatures`-style shape fo
 Legacy fields are still returned for compatibility while UI migration remains incremental.
 
 ## Turn-by-Turn Simulation Flow
+- `buildSimulationModel` is the domain-level entry point for the main opening-hand and mana-development simulation result.
 - Define iteration count from the simulation input.
 - Build a library-only pool (commander cards excluded from opening-hand draws).
 - For each iteration:

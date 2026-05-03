@@ -69,6 +69,7 @@ const simulationDomain =
 
 const {
   buildManaByTurn: domainBuildManaByTurn,
+  buildSimulationModel: domainBuildSimulationModel,
   buildLibrary: domainBuildLibrary,
   buildLibraryCards: domainBuildLibraryCards,
   createEmptyDistribution: domainCreateEmptyDistribution,
@@ -752,50 +753,10 @@ const recordOpeningHandStats = domainRecordOpeningHandStats;
 const createManaTimelineStats = domainCreateManaTimelineStats;
 const recordManaTimelineStats = domainRecordManaTimelineStats;
 const buildManaByTurn = domainBuildManaByTurn;
+const buildSimulationModel = domainBuildSimulationModel;
 
 function runSimulation(library, options = {}) {
-  const handSize = options.handSize ?? 7;
-  const simulations = options.simulations ?? 10000;
-  const deckColors = getDeckColors(library);
-  const openingHandStats = createOpeningHandStats(handSize);
-  const distribution = openingHandStats.distribution;
-  const counters = openingHandStats.counters;
-  const examples = openingHandStats.examples;
-  const manaTimelineStats = createManaTimelineStats();
-
-  for (let i = 0; i < simulations; i += 1) {
-    const draws = drawCards(library, OPENING_HAND_SIZE + 7);
-    const hand = draws.slice(0, handSize);
-    recordOpeningHandStats(openingHandStats, hand);
-    recordManaTimelineStats(manaTimelineStats, draws, deckColors);
-  }
-
-  const manaByTurn = buildManaByTurn(manaTimelineStats, simulations);
-
-  return {
-    simulations,
-    handSize,
-    distribution,
-    manaByTurn,
-    simulationFeatures: {
-      manaByTurn,
-      colorsByTurn: [],
-      fullCommanderColorAccessByTurn: [],
-      castabilityByTurn: [],
-      commanderTiming: null,
-    },
-    manaDevelopment: {
-      turns: manaByTurn.map((entry) => ({
-        turn: entry.turn,
-        averageAvailableMana: entry.averageTotalMana,
-        threshold: entry.threshold,
-        atLeastThresholdCount: entry.atLeastThresholdCount,
-      })),
-    },
-    counters,
-    averageLands: openingHandStats.totalLands / simulations,
-    examples: Object.values(examples).filter(Boolean),
-  };
+  return buildSimulationModel(library, options);
 }
 
 function getVisibleCardsForTurn(draws, turn) {
@@ -2771,6 +2732,7 @@ if (typeof module !== "undefined") {
   module.exports = {
     buildLibrary,
     buildLibraryCards,
+    buildSimulationModel,
     canCardsFormLegalPartnerPair,
     canPayManaCost,
     classifyCard,
