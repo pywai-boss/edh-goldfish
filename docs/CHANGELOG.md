@@ -29,3 +29,4 @@
 - Extracted simulation result rendering into `src/ui/simulation-render.js` while preserving displayed text and classes
 - Extracted deck textarea, parse-note, and Continue-button UI helpers into `src/ui/deck-input-ui.js`
 - Extracted UI event listener wiring into `src/ui/events.js`
+- Extracted commander modal DOM updates, commander select rendering, and commander candidate card rendering into `src/ui/commander-ui.js`
