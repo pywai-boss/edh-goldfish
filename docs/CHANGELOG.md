@@ -28,3 +28,4 @@
 - Added `buildSimulationModel` domain entry point for the main simulation result wrapper
 - Extracted simulation result rendering into `src/ui/simulation-render.js` while preserving displayed text and classes
 - Extracted deck textarea, parse-note, and Continue-button UI helpers into `src/ui/deck-input-ui.js`
+- Extracted UI event listener wiring into `src/ui/events.js`
