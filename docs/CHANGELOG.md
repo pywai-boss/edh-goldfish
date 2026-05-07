@@ -32,3 +32,4 @@
 - Extracted commander modal DOM updates, commander select rendering, and commander candidate card rendering into `src/ui/commander-ui.js`
 - Extracted Scryfall card collection and otag search fetch helpers into `src/data/scryfall.js`
 - Extracted curve/castability simulation into `src/domain/simulation.js` and removed duplicated turn helper bodies from `app.js`
+- Extracted commander castability simulation into `src/domain/simulation.js` and kept `app.js` as a compatibility delegate

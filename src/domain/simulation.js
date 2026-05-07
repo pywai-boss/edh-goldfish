@@ -19,6 +19,7 @@ const {
 } = cardDomain;
 
 const {
+  getCommanderColorIdentity,
   getCommanderKeySet,
   isCommandZoneCard,
   isOutsideDeckCard,
@@ -417,6 +418,156 @@ function simulateCurveAccess(deck, iterations = 10000, commanderColorIdentity = 
   };
 }
 
+function getCommanderTargetTurn(requirements) {
+  return requirements.total > 8 ? 8 : requirements.total;
+}
+
+function hasCommanderColors(availableMana, requirements) {
+  return MANA_COLORS.every((color) => availableMana.colorCounts[color] >= requirements.colors[color]);
+}
+
+function evaluateCommanderFailureReasonByTarget(availableManaByTurn, requirements, targetTurn) {
+  const turnsToCheck = availableManaByTurn.slice(0, targetTurn);
+  const hadEnoughManaByTarget = turnsToCheck.some((availableMana) => availableMana.total >= requirements.total);
+  const hadRequiredColorsByTarget =
+    requirements.colorPips === 0 || turnsToCheck.some((availableMana) => hasCommanderColors(availableMana, requirements));
+
+  if (!hadEnoughManaByTarget && !hadRequiredColorsByTarget) {
+    return "both";
+  }
+  if (!hadEnoughManaByTarget) {
+    return "insufficient_mana";
+  }
+  if (!hadRequiredColorsByTarget) {
+    return "missing_colors";
+  }
+  return "both";
+}
+
+function simulateCommanderCastAccess(
+  deck,
+  commanders = [],
+  iterations = 10000,
+  commanderColorIdentity = null,
+) {
+  if (!Array.isArray(commanders) || commanders.length === 0) {
+    return null;
+  }
+
+  const library = deck.some((card) => card.copy !== undefined) ? deck : buildLibrary(deck);
+  const sourceCards = deck.some((card) => card.copy !== undefined) ? deck : deck;
+  const deckColors = getRelevantColors(commanderColorIdentity || getCommanderColorIdentity(commanders));
+  const commanderStats = commanders.map((commander) => {
+    const requirements = getManaCostRequirements(commander);
+    const targetTurn = getCommanderTargetTurn(requirements);
+    return {
+      name: commander.name,
+      requirements,
+      targetTurn,
+      commanderCastableOnCurve: 0,
+      earliestCommanderCastTurnSum: 0,
+      earliestCommanderCastTurnCount: 0,
+      failureBreakdown: {
+        insufficient_mana: 0,
+        missing_colors: 0,
+        both: 0,
+        not_castable_by_turn_8: 0,
+      },
+      castableByTarget: 0,
+      castableBy8: 0,
+      castableTurnSum: 0,
+      castableTurnCount: 0,
+    };
+  });
+
+  let bothBy8 = 0;
+
+  for (let iteration = 0; iteration < iterations; iteration += 1) {
+    const draws = drawCards(library, OPENING_HAND_SIZE + 7);
+    const earliestCastTurns = Array.from({ length: commanderStats.length }, () => null);
+    const availableManaByTurn = [];
+    const manaByTurn = [];
+    const colorsByTurn = [];
+    const fullCommanderColorAccessByTurn = [];
+
+    for (let turn = 1; turn <= 8; turn += 1) {
+      const visibleCards = getVisibleCardsForTurn(draws, turn);
+      const availableMana = getAvailableManaForTurn(visibleCards, turn, deckColors);
+      availableManaByTurn.push(availableMana);
+      manaByTurn.push({
+        turn,
+        totalMana: availableMana.total,
+      });
+      colorsByTurn.push({
+        turn,
+        colorHits: Object.fromEntries(MANA_COLORS.map((color) => [color, availableMana.colorCounts[color] > 0 ? 1 : 0])),
+      });
+      fullCommanderColorAccessByTurn.push({
+        turn,
+        hasFullCommanderIdentity: deckColors.every((color) => availableMana.colorCounts[color] > 0),
+      });
+
+      commanderStats.forEach((stats, index) => {
+        if (earliestCastTurns[index] !== null) return;
+        if (manaByTurn[turn - 1].totalMana >= stats.requirements.total && canPayManaCost(availableMana, stats.requirements)) {
+          earliestCastTurns[index] = turn;
+        }
+      });
+    }
+
+    commanderStats.forEach((stats, index) => {
+      const castTurn = earliestCastTurns[index];
+      const castableOnCurve = castTurn !== null && castTurn <= stats.targetTurn;
+
+      if (castableOnCurve) {
+        stats.commanderCastableOnCurve += 1;
+        stats.castableByTarget += 1;
+      } else if (castTurn === null) {
+        stats.failureBreakdown.not_castable_by_turn_8 += 1;
+      } else {
+        const failureReason = evaluateCommanderFailureReasonByTarget(
+          availableManaByTurn,
+          stats.requirements,
+          stats.targetTurn,
+        );
+        stats.failureBreakdown[failureReason] += 1;
+      }
+
+      if (castTurn !== null) {
+        stats.earliestCommanderCastTurnSum += castTurn;
+        stats.earliestCommanderCastTurnCount += 1;
+        stats.castableBy8 += 1;
+        stats.castableTurnSum += castTurn;
+        stats.castableTurnCount += 1;
+      }
+    });
+
+    if (earliestCastTurns.length === 2 && earliestCastTurns.every((turn) => turn !== null && turn <= 8)) {
+      bothBy8 += 1;
+    }
+  }
+
+  return {
+    iterations,
+    commanders: commanderStats.map((stats) => ({
+      ...stats,
+      averageEarliestCommanderCastTurn:
+        stats.earliestCommanderCastTurnCount > 0
+          ? stats.earliestCommanderCastTurnSum / stats.earliestCommanderCastTurnCount
+          : null,
+      earliestCommanderCastTurn:
+        stats.earliestCommanderCastTurnCount > 0
+          ? stats.earliestCommanderCastTurnSum / stats.earliestCommanderCastTurnCount
+          : null,
+      failureReason: { ...stats.failureBreakdown },
+      failureReasonBreakdown: { ...stats.failureBreakdown },
+      averageCastableTurn:
+        stats.castableTurnCount > 0 ? stats.castableTurnSum / stats.castableTurnCount : null,
+    })),
+    bothBy8,
+  };
+}
+
 const exported = {
   buildManaByTurn,
   buildSimulationModel,
@@ -428,13 +579,17 @@ const exported = {
   createOpeningHandStats,
   drawCards,
   drawHand,
+  evaluateCommanderFailureReasonByTarget,
   getAvailableManaForTurn,
   getCastableSpellsForTurn,
+  getCommanderTargetTurn,
   getVisibleCardsForTurn,
+  hasCommanderColors,
   markCommandZoneCards,
   recordManaTimelineStats,
   recordOpeningHandStats,
   simulateColorAccess,
+  simulateCommanderCastAccess,
   simulateCurveAccess,
   summarizeHand,
 };
