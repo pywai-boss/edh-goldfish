@@ -10,6 +10,7 @@ const commanderDomain =
 
 const {
   MANA_COLORS,
+  canPayManaCost,
   entersTapped,
   getDeckColors,
   getManaCostRequirements,
@@ -355,6 +356,67 @@ function simulateColorAccess(deck, iterations = 10000, commanderColorIdentity = 
   };
 }
 
+function getCastableSpellsForTurn(visibleCards, availableMana, turn) {
+  return visibleCards.filter((card) => {
+    if (card.isLand || card.isExcluded) return false;
+    const requirements = getManaCostRequirements(card);
+    if (requirements.total === 0) return false;
+    if (turn < requirements.total) return false;
+    return canPayManaCost(availableMana, requirements);
+  });
+}
+
+function simulateCurveAccess(deck, iterations = 10000, commanderColorIdentity = null) {
+  const library = deck.some((card) => card.copy !== undefined) ? deck : buildLibrary(deck);
+  const sourceCards = deck.some((card) => card.copy !== undefined) ? deck : deck;
+  const deckColors = getRelevantColors(commanderColorIdentity || getDeckColors(sourceCards));
+  const turnStats = Array.from({ length: 8 }, (_, index) => ({
+    turn: index + 1,
+    anyCastable: 0,
+    onCurveSpellByTurnCost: 0,
+    curvePlay: 0,
+  }));
+
+  for (let iteration = 0; iteration < iterations; iteration += 1) {
+    const draws = drawCards(library, OPENING_HAND_SIZE + 7);
+
+    for (let turn = 1; turn <= 8; turn += 1) {
+      const visibleCards = getVisibleCardsForTurn(draws, turn);
+      const availableMana = getAvailableManaForTurn(visibleCards, turn, deckColors);
+      const castableSpells = getCastableSpellsForTurn(visibleCards, availableMana, turn);
+
+      if (castableSpells.length > 0) {
+        turnStats[turn - 1].anyCastable += 1;
+      }
+
+      if (castableSpells.some((card) => getManaCostRequirements(card).total === turn)) {
+        turnStats[turn - 1].onCurveSpellByTurnCost += 1;
+        turnStats[turn - 1].curvePlay += 1;
+      }
+    }
+  }
+
+  const castabilityByTurn = turnStats.map((turnData) => ({
+    turn: turnData.turn,
+    anyCastable: turnData.anyCastable,
+    onCurveSpellByTurnCost: turnData.onCurveSpellByTurnCost,
+  }));
+
+  return {
+    iterations,
+    deckColors,
+    castabilityByTurn,
+    simulationFeatures: {
+      manaByTurn: [],
+      colorsByTurn: [],
+      fullCommanderColorAccessByTurn: [],
+      castabilityByTurn,
+      commanderTiming: null,
+    },
+    turns: turnStats,
+  };
+}
+
 const exported = {
   buildManaByTurn,
   buildSimulationModel,
@@ -367,11 +429,13 @@ const exported = {
   drawCards,
   drawHand,
   getAvailableManaForTurn,
+  getCastableSpellsForTurn,
   getVisibleCardsForTurn,
   markCommandZoneCards,
   recordManaTimelineStats,
   recordOpeningHandStats,
   simulateColorAccess,
+  simulateCurveAccess,
   summarizeHand,
 };
 

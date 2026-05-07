@@ -77,10 +77,13 @@ const {
   createOpeningHandStats: domainCreateOpeningHandStats,
   drawCards: domainDrawCards,
   drawHand: domainDrawHand,
+  getAvailableManaForTurn: domainGetAvailableManaForTurn,
+  getVisibleCardsForTurn: domainGetVisibleCardsForTurn,
   markCommandZoneCards: domainMarkCommandZoneCards,
   recordManaTimelineStats: domainRecordManaTimelineStats,
   recordOpeningHandStats: domainRecordOpeningHandStats,
   simulateColorAccess: domainSimulateColorAccess,
+  simulateCurveAccess: domainSimulateCurveAccess,
   summarizeHand: domainSummarizeHand,
 } = simulationDomain;
 
@@ -684,93 +687,11 @@ const createManaTimelineStats = domainCreateManaTimelineStats;
 const recordManaTimelineStats = domainRecordManaTimelineStats;
 const buildManaByTurn = domainBuildManaByTurn;
 const buildSimulationModel = domainBuildSimulationModel;
+const getVisibleCardsForTurn = domainGetVisibleCardsForTurn;
+const getAvailableManaForTurn = domainGetAvailableManaForTurn;
 
 function runSimulation(library, options = {}) {
   return buildSimulationModel(library, options);
-}
-
-function getVisibleCardsForTurn(draws, turn) {
-  const drawCount = Math.min(draws.length, OPENING_HAND_SIZE + Math.max(0, turn - 1));
-  return draws.slice(0, drawCount);
-}
-
-function chooseLandsForTurn(visibleCards, turn, deckColors) {
-  const lands = visibleCards.filter((card) => card.isLand);
-  const chosen = [];
-  const availableColors = new Set();
-  const maxLands = Math.min(turn, lands.length);
-
-  for (let index = 0; index < maxLands; index += 1) {
-    let bestLand = null;
-    let bestScore = -1;
-
-    lands.forEach((land) => {
-      if (chosen.includes(land)) return;
-      const colors = getProducedColors(land, deckColors).filter((color) => MANA_COLORS.includes(color));
-      const newColorScore = colors.filter((color) => !availableColors.has(color)).length;
-      const deckColorScore = colors.filter((color) => deckColors.includes(color)).length;
-      const score = newColorScore * 10 + deckColorScore;
-
-      if (score > bestScore) {
-        bestLand = land;
-        bestScore = score;
-      }
-    });
-
-    if (!bestLand) break;
-    chosen.push(bestLand);
-    getProducedColors(bestLand, deckColors).forEach((color) => availableColors.add(color));
-  }
-
-  return chosen;
-}
-
-function getAvailableManaForTurn(visibleCards, turn, deckColors) {
-  const sources = [];
-  const lands = chooseLandsForTurn(visibleCards, turn, deckColors);
-
-  lands.forEach((land, index) => {
-    if (entersTapped(land) && index === lands.length - 1) {
-      return;
-    }
-    const colors = getProducedColors(land, deckColors);
-    if (colors.length > 0) {
-      sources.push({ card: land, colors });
-    }
-  });
-
-  visibleCards.forEach((card) => {
-    if (card.isLand || card.isExcluded || !card.isRamp) return;
-    const colors = getProducedColors(card, deckColors);
-    const requirements = getManaCostRequirements(card);
-    if (colors.length > 0 && requirements.total > 0 && requirements.total < turn) {
-      sources.push({ card, colors });
-    }
-  });
-
-  const colorCounts = Object.fromEntries(MANA_COLORS.map((color) => [color, 0]));
-  sources.forEach((source) => {
-    source.colors.forEach((color) => {
-      if (MANA_COLORS.includes(color)) colorCounts[color] += 1;
-    });
-  });
-
-  return {
-    total: sources.length,
-    sources,
-    colorCounts,
-    colors: MANA_COLORS.filter((color) => colorCounts[color] > 0),
-  };
-}
-
-function getCastableSpellsForTurn(visibleCards, availableMana, turn) {
-  return visibleCards.filter((card) => {
-    if (card.isLand || card.isExcluded) return false;
-    const requirements = getManaCostRequirements(card);
-    if (requirements.total === 0) return false;
-    if (turn < requirements.total) return false;
-    return canPayManaCost(availableMana, requirements);
-  });
 }
 
 function simulateColorAccess(deck, iterations = 10000, commanderColorIdentity = null) {
@@ -778,54 +699,7 @@ function simulateColorAccess(deck, iterations = 10000, commanderColorIdentity = 
 }
 
 function simulateCurveAccess(deck, iterations = 10000, commanderColorIdentity = null) {
-  const library = deck.some((card) => card.copy !== undefined) ? deck : buildLibrary(deck);
-  const sourceCards = deck.some((card) => card.copy !== undefined) ? deck : deck;
-  const deckColors = getRelevantColors(commanderColorIdentity || getDeckColors(sourceCards));
-  const turnStats = Array.from({ length: 8 }, (_, index) => ({
-    turn: index + 1,
-    anyCastable: 0,
-    onCurveSpellByTurnCost: 0,
-    curvePlay: 0,
-  }));
-
-  for (let iteration = 0; iteration < iterations; iteration += 1) {
-    const draws = drawCards(library, OPENING_HAND_SIZE + 7);
-
-    for (let turn = 1; turn <= 8; turn += 1) {
-      const visibleCards = getVisibleCardsForTurn(draws, turn);
-      const availableMana = getAvailableManaForTurn(visibleCards, turn, deckColors);
-      const castableSpells = getCastableSpellsForTurn(visibleCards, availableMana, turn);
-
-      if (castableSpells.length > 0) {
-        turnStats[turn - 1].anyCastable += 1;
-      }
-
-      if (castableSpells.some((card) => getManaCostRequirements(card).total === turn)) {
-        turnStats[turn - 1].onCurveSpellByTurnCost += 1;
-        turnStats[turn - 1].curvePlay += 1;
-      }
-    }
-  }
-
-  const castabilityByTurn = turnStats.map((turnData) => ({
-    turn: turnData.turn,
-    anyCastable: turnData.anyCastable,
-    onCurveSpellByTurnCost: turnData.onCurveSpellByTurnCost,
-  }));
-
-  return {
-    iterations,
-    deckColors,
-    castabilityByTurn,
-    simulationFeatures: {
-      manaByTurn: [],
-      colorsByTurn: [],
-      fullCommanderColorAccessByTurn: [],
-      castabilityByTurn,
-      commanderTiming: null,
-    },
-    turns: turnStats,
-  };
+  return domainSimulateCurveAccess(deck, iterations, commanderColorIdentity);
 }
 
 function getCommanderTargetTurn(requirements) {
